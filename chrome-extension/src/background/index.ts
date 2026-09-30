@@ -320,7 +320,19 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
     displayHighlights: generalSettings.displayHighlights,
   });
 
-  const executor = new Executor(task, taskId, browserContext, navigatorLLM, {
+  // 给规划器提供"用户当前正在看的页面"上下文,避免对页面相关问题拒答
+  let taskWithPage = task;
+  try {
+    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+    if (activeTab?.url && /^https?:/i.test(activeTab.url)) {
+      taskWithPage =
+        task + '\n\n[用户当前正在浏览的页面:' + (activeTab.title || '(无标题)') + '(' + activeTab.url + ')]';
+    }
+  } catch (e) {
+    logger.warn('Failed to get active tab for task context:', e);
+  }
+
+  const executor = new Executor(taskWithPage, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
     skillsInstructions: await getSkillsSystemInstructions(),
     agentOptions: {

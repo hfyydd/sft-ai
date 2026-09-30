@@ -13,6 +13,7 @@ import {
   sendKeysActionSchema,
   scrollToTextActionSchema,
   cacheContentActionSchema,
+  readPageActionSchema,
   selectDropdownOptionActionSchema,
   getDropdownOptionsActionSchema,
   closeTabActionSchema,
@@ -379,6 +380,41 @@ export class ActionBuilder {
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, cacheContentActionSchema);
     actions.push(cacheContent);
+
+    // Read the visible text of the current page (for page-QA style questions)
+    const readPage = new Action(async (input: z.infer<typeof readPageActionSchema.schema>) => {
+      const intent = input.intent || t('act_readPage_start');
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+
+      try {
+        const page = await this.context.browserContext.getCurrentPage();
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId: page.tabId },
+          func: (maxLen: number) => {
+            const text = document.body?.innerText ?? '';
+            return text.length > maxLen ? text.slice(0, maxLen) + '…[已截断]' : text;
+          },
+          args: [input.maxLength || 6000],
+        });
+        const text = ((result?.result as string) || '').trim();
+        if (!text) {
+          const emptyMsg = t('act_readPage_empty');
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
+          return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
+        }
+        const msg = t('act_readPage_ok') + '(' + text.length + ' 字符)';
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
+        return new ActionResult({
+          extractedContent: msg + ':\n' + text,
+          includeInMemory: true,
+        });
+      } catch (error) {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, t('act_readPage_fail') + errMsg);
+        return new ActionResult({ error: t('act_readPage_fail') + errMsg });
+      }
+    }, readPageActionSchema);
+    actions.push(readPage);
 
     // Scroll to percent
     const scrollToPercent = new Action(async (input: z.infer<typeof scrollToPercentActionSchema.schema>) => {

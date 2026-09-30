@@ -102,6 +102,17 @@ export const closeTabActionSchema: ActionSchema = {
 //   }),
 // };
 
+// Page Reading Actions
+export const readPageActionSchema: ActionSchema = {
+  name: 'read_page',
+  description:
+    'Read the visible text content of the current page. Use this BEFORE answering any question about what the page contains',
+  schema: z.object({
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
+    maxLength: z.number().int().default(6000).describe('maximum characters of text to return'),
+  }),
+};
+
 // Cache Actions
 export const cacheContentActionSchema: ActionSchema = {
   name: 'cache_content',

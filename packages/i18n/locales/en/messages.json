@@ -980,5 +980,17 @@
   },
   "act_done_ok": {
     "message": "任务已完成"
+  },
+  "act_readPage_start": {
+    "message": "正在读取页面文本…"
+  },
+  "act_readPage_ok": {
+    "message": "已读取页面文本"
+  },
+  "act_readPage_empty": {
+    "message": "页面上没有可见文本"
+  },
+  "act_readPage_fail": {
+    "message": "读取页面文本失败:"
   }
 }
