@@ -150,6 +150,22 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
           logger.debug(`[${this.modelName}] Successfully parsed structured output`);
           return response.parsed;
         }
+
+        // DeepSeek 等模型偶发结构化输出解析失败:raw 响应里往往是合法 JSON,
+        // 先尝试手工提取兜底,而不是直接抛错(抛错会让整轮规划作废)
+        const rawContentOnParsed = response.raw?.content;
+        if (typeof rawContentOnParsed === 'string' && rawContentOnParsed.trim()) {
+          const salvaged = this.manuallyParseResponse(rawContentOnParsed);
+          if (salvaged) {
+            logger.info(`[${this.modelName}] Structured output parse failed, manual salvage succeeded`);
+            return salvaged;
+          }
+        }
+        const salvagedFromToolCalls = this.salvageFromToolCalls(response.raw);
+        if (salvagedFromToolCalls) {
+          logger.info(`[${this.modelName}] Structured output parse failed, tool_calls salvage succeeded`);
+          return salvagedFromToolCalls;
+        }
         logger.error('Failed to parse response', response);
         throw new Error('Could not parse response with structured output');
       } catch (error) {
@@ -159,15 +175,17 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
 
         // Try to extract JSON from raw response manually if possible
         const errorMessage = error instanceof Error ? error.message : String(error);
-        if (
-          errorMessage.includes('is not valid JSON') &&
-          response?.raw?.content &&
-          typeof response.raw.content === 'string'
-        ) {
+        if (response?.raw?.content && typeof response.raw.content === 'string') {
           const parsed = this.manuallyParseResponse(response.raw.content);
           if (parsed) {
+            logger.info(`[${this.modelName}] Structured output failed, manual salvage succeeded`);
             return parsed;
           }
+        }
+        const salvagedFromToolCalls2 = this.salvageFromToolCalls(response.raw);
+        if (salvagedFromToolCalls2) {
+          logger.info(`[${this.modelName}] Structured output failed, tool_calls salvage succeeded`);
+          return salvagedFromToolCalls2;
         }
         logger.error(`[${this.modelName}] LLM call failed with error: \n${errorMessage}`);
         throw new Error(`Failed to invoke ${this.modelName} with structured output: \n${errorMessage}`);
@@ -211,6 +229,21 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       logger.error('validateModelOutput', error);
       throw new ResponseParseError('Could not validate model output');
     }
+  }
+
+  /** Agent Loop v2:从 tool_calls 参数中兜底提取结构化输出 */
+  protected salvageFromToolCalls(raw: any): this['ModelOutput'] | undefined {
+    const calls = raw?.additional_kwargs?.tool_calls || raw?.tool_calls;
+    const argsStr = calls?.[0]?.function?.arguments;
+    if (typeof argsStr !== 'string' || !argsStr.trim()) return undefined;
+    try {
+      const validated = this.validateModelOutput(JSON.parse(argsStr));
+      if (validated) return validated;
+    } catch {
+      // arguments 不是合法 JSON 时,复用手工解析(jsonrepair + 容错提取)
+      return this.manuallyParseResponse(argsStr);
+    }
+    return undefined;
   }
 
   // Helper method to manually parse the response content

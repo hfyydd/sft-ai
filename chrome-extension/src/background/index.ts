@@ -123,9 +123,12 @@ chrome.runtime.onConnect.addListener(port => {
               const result = await currentExecutor.execute();
               logger.info('follow_up_task execution result', message.tabId, result);
             } else {
-              // executor was cleaned up, can not add follow-up task
-              logger.info('follow_up_task: executor was cleaned up, can not add follow-up task');
-              return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_cleaned') });
+              // Agent Loop v2: 执行器已清理(如 SW 重启)时,自动降级为新任务而不是报错
+              logger.info('follow_up_task: executor was cleaned up, starting a new task instead');
+              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
+              subscribeToExecutorEvents(currentExecutor);
+              const result = await currentExecutor.execute();
+              logger.info('new_task execution result', message.tabId, result);
             }
             break;
           }

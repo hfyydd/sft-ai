@@ -30,6 +30,7 @@ import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
+import { extractPdfTextFromUrl } from '../pdf';
 
 const logger = createLogger('Action');
 
@@ -398,8 +399,44 @@ export class ActionBuilder {
           args: [input.maxLength || 6000],
         });
         let text = ((result?.result as string) || '').trim();
+        const tabInfo = await chrome.tabs.get(page.tabId);
+        const tabUrl = tabInfo.url || '';
+        let pdfExtractionFailed = false;
+        let pdfAttempted = false;
 
-        // 页面没有 DOM 文本(典型:内置查看器渲染的 PDF)。回退:截屏 + 视觉模型识别
+        // 路线二(主路线):PDF → 下载字节 + pdf.js 提取文本层(含 OCR 文本层)
+        if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^https?:/i.test(tabUrl)) {
+          pdfAttempted = true;
+          const pdfMsg = t('act_readPage_pdf');
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
+          try {
+            const pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/') });
+            if (pdfResult.text) {
+              const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
+              this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
+              return new ActionResult({
+                extractedContent: okMsg + ':\n' + pdfResult.text,
+                includeInMemory: true,
+              });
+            }
+            pdfExtractionFailed = true; // 文本层为空(纯扫描件)
+            logger.info('PDF 无文本层(纯扫描件),回退到截图识别');
+          } catch (pdfError) {
+            logger.warning('PDF 文本层提取失败,回退到截图识别:', pdfError);
+            pdfExtractionFailed = true;
+          }
+        }
+
+        // PDF 提取失败时的确定性答复:明确告知用户,避免 agent 无限重试
+        if (pdfExtractionFailed || (pdfAttempted && /未能加载|加载失败|无法加载/.test(text))) {
+          const failMsg =
+            `这是一个 PDF 文件(${tabUrl}),当前浏览器未能加载或无法提取其文本内容。` +
+            `请向用户说明该情况,并建议其确认文件可正常打开后重试,或提供文件所在系统的入口页面。`;
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, failMsg);
+          return new ActionResult({ extractedContent: failMsg, includeInMemory: true });
+        }
+
+        // 页面没有 DOM 文本(纯扫描件 PDF 等)。兜底:截屏 + 视觉模型识别
         if (!text) {
           const visionMsg = t('act_readPage_vision');
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, visionMsg);

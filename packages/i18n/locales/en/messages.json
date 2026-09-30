@@ -998,5 +998,8 @@
   },
   "act_readPage_vision_ok": {
     "message": "已通过截图识别页面内容"
+  },
+  "act_readPage_pdf": {
+    "message": "正在解析 PDF 文本层…"
   }
 }

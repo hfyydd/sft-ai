@@ -247,8 +247,12 @@ export class Executor {
         positionForPlan = this.context.messageManager.length();
       }
 
-      // Execute planner
-      const planOutput = await this.planner.execute();
+      // Execute planner(结构化输出偶发解析失败,自动重试一次)
+      let planOutput = await this.planner.execute();
+      if (!planOutput.result) {
+        logger.info('Planner returned no result, retrying once...');
+        planOutput = await this.planner.execute();
+      }
       if (planOutput.result) {
         this.context.messageManager.addPlan(JSON.stringify(planOutput.result), positionForPlan);
       }
