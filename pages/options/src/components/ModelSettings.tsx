@@ -714,7 +714,7 @@ export const ModelSettings = ({ isDarkMode = false }: ModelSettingsProps) => {
     <div
       className={`rounded-lg border ${isDarkMode ? 'border-gray-700 bg-slate-800' : 'border-gray-200 bg-gray-50'} p-4`}>
       <h3 className={`mb-2 text-lg font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-        {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
+        {agentName === AgentNameEnum.Planner ? '规划(Planner)' : '执行(Navigator)'}
       </h3>
       <p className={`mb-4 text-sm font-normal ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
         {getAgentDescription(agentName)}

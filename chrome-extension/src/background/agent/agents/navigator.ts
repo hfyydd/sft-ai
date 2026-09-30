@@ -1,3 +1,4 @@
+import { t } from '@extension/i18n';
 import { z } from 'zod';
 import { BaseAgent, type BaseAgentOptions, type ExtraAgentOptions } from './base';
 import { createLogger } from '@src/background/log';
@@ -166,7 +167,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
     let actionResults: ActionResult[] = [];
 
     try {
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, 'Navigating...');
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_START, t('exec_navigator_start'));
 
       const messageManager = this.context.messageManager;
       // add the browser state message
@@ -212,7 +213,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         return agentOutput;
       }
       // emit event
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_OK, 'Navigation done');
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_OK, t('exec_navigator_ok'));
       let done = false;
       if (actionResults.length > 0 && actionResults[actionResults.length - 1].isDone) {
         done = true;
@@ -246,7 +247,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       // if the task is cancelled, remove the last state message from memory and emit event
       if (cancelled) {
         this.removeLastStateMessageFromMemory();
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, 'Navigation cancelled');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.STEP_CANCEL, t('exec_navigator_cancel'));
       }
       if (browserStateHistory) {
         // Create a copy of actionResults to store in history

@@ -153,8 +153,12 @@ export class ActionBuilder {
     const actions = [];
 
     const done = new Action(async (input: z.infer<typeof doneActionSchema.schema>) => {
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, doneActionSchema.name);
-      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, input.text);
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, t('act_done_start'));
+      this.context.emitEvent(
+        Actors.NAVIGATOR,
+        ExecutionState.ACT_OK,
+        input.text && input.text.trim().toLowerCase() !== 'done' ? input.text : t('act_done_ok'),
+      );
       return new ActionResult({
         isDone: true,
         extractedContent: input.text,

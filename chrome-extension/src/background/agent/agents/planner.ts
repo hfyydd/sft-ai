@@ -1,3 +1,4 @@
+import { t } from '@extension/i18n';
 import { BaseAgent, type BaseAgentOptions, type ExtraAgentOptions } from './base';
 import { createLogger } from '@src/background/log';
 import { z } from 'zod';
@@ -52,7 +53,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
 
   async execute(): Promise<AgentOutput<PlannerOutput>> {
     try {
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, 'Planning...');
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_START, t('exec_planner_start'));
       // get all messages from the message manager, state message should be the last one
       const messages = this.context.messageManager.getMessages();
       // Use full message history except the first one
@@ -121,7 +122,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       }
 
       logger.error(`Planning failed: ${errorMessage}`);
-      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_FAIL, `Planning failed: ${errorMessage}`);
+      this.context.emitEvent(Actors.PLANNER, ExecutionState.STEP_FAIL, t('exec_planner_fail') + errorMessage);
       return {
         id: this.id,
         error: errorMessage,

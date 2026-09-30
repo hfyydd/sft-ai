@@ -13,7 +13,7 @@ interface ChatHistoryListProps {
   sessions: ChatSession[];
   onSessionSelect: (sessionId: string) => void;
   onSessionDelete: (sessionId: string) => void;
-  onSessionBookmark: (sessionId: string) => void;
+  onSessionBookmark?: (sessionId: string) => void;
   visible: boolean;
   isDarkMode?: boolean;
 }

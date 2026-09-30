@@ -959,5 +959,26 @@
         "example": "Option not found"
       }
     }
+  },
+  "act_done_start": {
+    "message": "任务完成"
+  },
+  "exec_navigator_start": {
+    "message": "正在执行页面操作…"
+  },
+  "exec_navigator_ok": {
+    "message": "页面操作执行完成"
+  },
+  "exec_navigator_cancel": {
+    "message": "页面操作已取消"
+  },
+  "exec_planner_start": {
+    "message": "正在制定任务计划…"
+  },
+  "exec_planner_fail": {
+    "message": "规划失败:"
+  },
+  "act_done_ok": {
+    "message": "任务已完成"
   }
 }

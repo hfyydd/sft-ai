@@ -10,7 +10,7 @@ export const doneActionSchema: ActionSchema = {
   name: 'done',
   description: 'Complete task',
   schema: z.object({
-    text: z.string(),
+    text: z.string().describe('任务完成情况总结,必须用简体中文书写'),
     success: z.boolean(),
   }),
 };
@@ -21,7 +21,7 @@ export const searchGoogleActionSchema: ActionSchema = {
   description:
     'Search the query in Google in the current tab, the query should be a search query like humans search in Google, concrete and not vague or super long. More the single most important items.',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     query: z.string(),
   }),
 };
@@ -30,7 +30,7 @@ export const goToUrlActionSchema: ActionSchema = {
   name: 'go_to_url',
   description: 'Navigate to URL in the current tab',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     url: z.string(),
   }),
 };
@@ -39,7 +39,7 @@ export const goBackActionSchema: ActionSchema = {
   name: 'go_back',
   description: 'Go back to the previous page',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
   }),
 };
 
@@ -47,7 +47,7 @@ export const clickElementActionSchema: ActionSchema = {
   name: 'click_element',
   description: 'Click element by index',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().describe('index of the element'),
     xpath: z.string().nullable().optional().describe('xpath of the element'),
   }),
@@ -57,7 +57,7 @@ export const inputTextActionSchema: ActionSchema = {
   name: 'input_text',
   description: 'Input text into an interactive input element',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().describe('index of the element'),
     text: z.string().describe('text to input'),
     xpath: z.string().nullable().optional().describe('xpath of the element'),
@@ -69,7 +69,7 @@ export const switchTabActionSchema: ActionSchema = {
   name: 'switch_tab',
   description: 'Switch to tab by tab id',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     tab_id: z.number().int().describe('id of the tab to switch to'),
   }),
 };
@@ -78,7 +78,7 @@ export const openTabActionSchema: ActionSchema = {
   name: 'open_tab',
   description: 'Open URL in new tab',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     url: z.string().describe('url to open'),
   }),
 };
@@ -87,7 +87,7 @@ export const closeTabActionSchema: ActionSchema = {
   name: 'close_tab',
   description: 'Close tab by tab id',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     tab_id: z.number().int().describe('id of the tab'),
   }),
 };
@@ -107,7 +107,7 @@ export const cacheContentActionSchema: ActionSchema = {
   name: 'cache_content',
   description: 'Cache what you have found so far from the current page for future use',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     content: z.string().default('').describe('content to cache'),
   }),
 };
@@ -117,7 +117,7 @@ export const scrollToPercentActionSchema: ActionSchema = {
   description:
     'Scrolls to a particular vertical percentage of the document or an element. If no index of element is specified, scroll the whole document.',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     yPercent: z.number().int().describe('percentage to scroll to - min 0, max 100; 0 is top, 100 is bottom'),
     index: z.number().int().nullable().optional().describe('index of the element'),
   }),
@@ -127,7 +127,7 @@ export const scrollToTopActionSchema: ActionSchema = {
   name: 'scroll_to_top',
   description: 'Scroll the document in the window or an element to the top',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().nullable().optional().describe('index of the element'),
   }),
 };
@@ -136,7 +136,7 @@ export const scrollToBottomActionSchema: ActionSchema = {
   name: 'scroll_to_bottom',
   description: 'Scroll the document in the window or an element to the bottom',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().nullable().optional().describe('index of the element'),
   }),
 };
@@ -146,7 +146,7 @@ export const previousPageActionSchema: ActionSchema = {
   description:
     'Scroll the document in the window or an element to the previous page. If no index is specified, scroll the whole document.',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().nullable().optional().describe('index of the element'),
   }),
 };
@@ -156,7 +156,7 @@ export const nextPageActionSchema: ActionSchema = {
   description:
     'Scroll the document in the window or an element to the next page. If no index is specified, scroll the whole document.',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().nullable().optional().describe('index of the element'),
   }),
 };
@@ -165,7 +165,7 @@ export const scrollToTextActionSchema: ActionSchema = {
   name: 'scroll_to_text',
   description: 'If you dont find something which you want to interact with in current viewport, try to scroll to it',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     text: z.string().describe('text to scroll to'),
     nth: z
       .number()
@@ -181,7 +181,7 @@ export const sendKeysActionSchema: ActionSchema = {
   description:
     'Send strings of special keys like Backspace, Insert, PageDown, Delete, Enter. Shortcuts such as `Control+o`, `Control+Shift+T` are supported as well. This gets used in keyboard press. Be aware of different operating systems and their shortcuts',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     keys: z.string().describe('keys to send'),
   }),
 };
@@ -190,7 +190,7 @@ export const getDropdownOptionsActionSchema: ActionSchema = {
   name: 'get_dropdown_options',
   description: 'Get all options from a native dropdown',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().describe('index of the dropdown element'),
   }),
 };
@@ -199,7 +199,7 @@ export const selectDropdownOptionActionSchema: ActionSchema = {
   name: 'select_dropdown_option',
   description: 'Select dropdown option for interactive element index by the text of the option you want to select',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     index: z.number().int().describe('index of the dropdown element'),
     text: z.string().describe('text of the option'),
   }),
@@ -209,7 +209,7 @@ export const waitActionSchema: ActionSchema = {
   name: 'wait',
   description: 'Wait for x seconds default 3, do NOT use this action unless user asks to wait explicitly',
   schema: z.object({
-    intent: z.string().default('').describe('purpose of this action'),
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     seconds: z.number().int().default(3).describe('amount of seconds'),
   }),
 };
