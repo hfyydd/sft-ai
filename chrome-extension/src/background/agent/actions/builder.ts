@@ -427,15 +427,6 @@ export class ActionBuilder {
           }
         }
 
-        // PDF 提取失败时的确定性答复:明确告知用户,避免 agent 无限重试
-        if (pdfExtractionFailed || (pdfAttempted && /未能加载|加载失败|无法加载/.test(text))) {
-          const failMsg =
-            `这是一个 PDF 文件(${tabUrl}),当前浏览器未能加载或无法提取其文本内容。` +
-            `请向用户说明该情况,并建议其确认文件可正常打开后重试,或提供文件所在系统的入口页面。`;
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, failMsg);
-          return new ActionResult({ extractedContent: failMsg, includeInMemory: true });
-        }
-
         // 页面没有 DOM 文本(纯扫描件 PDF 等)。兜底:截屏 + 视觉模型识别
         if (!text) {
           const visionMsg = t('act_readPage_vision');
@@ -455,6 +446,12 @@ export class ActionBuilder {
           ]);
           text = (typeof vision.content === 'string' ? vision.content : JSON.stringify(vision.content)).trim();
           if (!text) {
+            // PDF 场景:文本层与截图识别都失败时,给确定性答复而不是让 agent 无限重试
+            if (pdfAttempted) {
+              const failMsg = `这是一个 PDF 文件(${tabUrl}),浏览器未能加载或无法提取其文本内容。请向用户说明该情况,并建议其确认文件可正常打开后重试,或提供文件所在系统的入口页面。`;
+              this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, failMsg);
+              return new ActionResult({ extractedContent: failMsg, includeInMemory: true });
+            }
             const emptyMsg = t('act_readPage_empty');
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
             return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });

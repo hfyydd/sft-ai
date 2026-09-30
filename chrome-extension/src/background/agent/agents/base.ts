@@ -109,6 +109,14 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       return false;
     }
 
+    // DeepSeek V4 系列在强制 tool_choice 的结构化输出下不稳定(2026-09-30 实测,
+    // 规划连续多轮 "Could not parse response with structured output"),
+    // 统一走普通调用 + jsonrepair 手工提取的兜底路径(更稳)
+    if (this.modelName.startsWith('deepseek')) {
+      logger.debug(`[${this.modelName}] DeepSeek model: using manual JSON extraction instead of structured output`);
+      return false;
+    }
+
     // Llama API models don't support json_schema response format
     if (this.provider === ProviderTypeEnum.Llama || this.isLlamaModel(this.modelName)) {
       logger.debug(`[${this.modelName}] Llama API doesn't support structured output, using manual JSON extraction`);
