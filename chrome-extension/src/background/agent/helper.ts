@@ -277,6 +277,10 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
         apiKey: providerConfig.apiKey,
         temperature,
         topP,
+        // DeepSeek V4+ models think by default, and their thinking mode rejects
+        // forced tool_choice — which withStructuredOutput relies on. Verified
+        // against api.deepseek.com on 2026-09-30: disabling thinking unblocks it.
+        modelKwargs: { thinking: { type: 'disabled' } },
       };
       return new ChatDeepSeek(args) as BaseChatModel;
     }

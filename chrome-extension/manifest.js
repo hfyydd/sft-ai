@@ -52,6 +52,8 @@ function withOperaSidebar(manifest) {
 const manifest = withOperaSidebar(
   withSidePanel({
     manifest_version: 3,
+    // Side Panel API needs 114; the debugger transport (CDP flat sessions) needs 116+
+    minimum_chrome_version: '116',
     default_locale: 'en',
     /**
      * if you want to support multiple languages, you can use the following reference
