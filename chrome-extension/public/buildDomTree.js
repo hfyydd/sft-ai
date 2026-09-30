@@ -10,8 +10,8 @@ window.buildDomTree = (
 ) => {
   const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode } =
     args;
-  // Make sure to do highlight elements always, but we can hide the highlights if needed
-  const doHighlightElements = true;
+  // 元素高亮框已按需求移除:无条件不绘制(索引定位不依赖高亮)
+  const doHighlightElements = false;
 
   let highlightIndex = startHighlightIndex; // Reset highlight index
 

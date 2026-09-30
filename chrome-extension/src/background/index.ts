@@ -317,7 +317,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
   const generalSettings = await generalSettingsStore.getSettings();
   browserContext.updateConfig({
     minimumWaitPageLoadTime: generalSettings.minWaitPageLoad / 1000.0,
-    displayHighlights: generalSettings.displayHighlights,
+    displayHighlights: false, // 元素高亮框已按需求移除
   });
 
   // 给规划器提供"用户当前正在看的页面"上下文,避免对页面相关问题拒答
