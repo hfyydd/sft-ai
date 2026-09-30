@@ -42,6 +42,10 @@ export const plannerOutputSchema = z.object({
       throw new Error('Invalid boolean string');
     }),
   ]),
+  memory_write: z
+    .string()
+    .default('')
+    .describe('将关键事实写入工作记忆(已采集的数据、页面结论、下一步依据),必须用简体中文书写,没有则留空'),
 });
 
 export type PlannerOutput = z.infer<typeof plannerOutputSchema>;
@@ -98,6 +102,12 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         final_answer,
         next_steps,
       };
+
+      // Agent Loop v2: 规划器把关键事实写入工作记忆
+      const memoryWrite = (cleanedPlan.memory_write || '').trim();
+      if (memoryWrite) {
+        this.context.taskMemory.add(memoryWrite);
+      }
 
       // If task is done, emit the final answer; otherwise emit next steps
       const eventMessage = cleanedPlan.done ? cleanedPlan.final_answer : cleanedPlan.next_steps;

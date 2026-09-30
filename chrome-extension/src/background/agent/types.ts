@@ -33,6 +33,8 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
   planningInterval: 3,
 };
 
+import { TaskMemory } from './memory';
+
 export class AgentContext {
   controller: AbortController;
   taskId: string;
@@ -49,6 +51,7 @@ export class AgentContext {
   stateMessageAdded: boolean;
   history: AgentStepHistory;
   finalAnswer: string | null;
+  taskMemory: TaskMemory;
 
   constructor(
     taskId: string,
@@ -73,6 +76,7 @@ export class AgentContext {
     this.stateMessageAdded = false;
     this.history = new AgentStepHistory();
     this.finalAnswer = null;
+    this.taskMemory = new TaskMemory();
   }
 
   async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {

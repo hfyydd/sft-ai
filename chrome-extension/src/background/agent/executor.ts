@@ -292,6 +292,12 @@ export class Executor {
         throw new Error(navOutput.error);
       }
       context.consecutiveFailures = 0;
+      // Agent Loop v2: 动作级失败写入工作记忆,供下一轮规划反思
+      for (const r of context.actionResults) {
+        if (r.error) {
+          context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
+        }
+      }
       if (navOutput.result?.done) {
         return true;
       }
@@ -307,6 +313,9 @@ export class Executor {
       ) {
         throw error;
       }
+      context.taskMemory.add(
+        `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,
+      );
       context.consecutiveFailures++;
       logger.error(`Failed to execute step: ${error}`);
       if (context.consecutiveFailures >= context.options.maxFailures) {

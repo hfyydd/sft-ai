@@ -135,5 +135,11 @@ Common action sequences:
 13. Language:
 
 - Write ALL human-readable texts (the intent/description of each action, and the text field of the done action) in Simplified Chinese (简体中文).
+
+14. Task Memory:
+
+- The state message may include a [Task memory / 工作记忆] section: key facts from previous steps (collected data, page conclusions, past failures).
+- Treat it as your primary source of truth across pages: do NOT re-collect information already recorded in memory; after switching pages, continue from memory instead of starting over.
+- If memory says an action already failed before, choose a DIFFERENT approach.
 </system_instructions>
 `;

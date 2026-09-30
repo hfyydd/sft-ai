@@ -63,6 +63,12 @@ abstract class BasePrompt {
       }
     }
 
+    // Agent Loop v2: 工作记忆注入(对规划器与导航器同时可见)
+    const memoryBlock = context.taskMemory ? context.taskMemory.serialize() : '';
+    const memorySection = memoryBlock
+      ? `\n[Task memory / 工作记忆 - 关键事实来自此前步骤]\n${wrapUntrustedContent(memoryBlock)}\n`
+      : '';
+
     const currentTab = `{id: ${browserState.tabId}, url: ${browserState.url}, title: ${browserState.title}}`;
     const otherTabs = browserState.tabs
       .filter(tab => tab.id !== browserState.tabId)
@@ -78,6 +84,7 @@ Interactive elements from top layer of the current page inside the viewport:
 ${formattedElementsText}
 ${stepInfoDescription}
 ${actionResultsDescription}
+${memorySection}
 `;
 
     if (browserState.screenshot && context.options.useVision) {

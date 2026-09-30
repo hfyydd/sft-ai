@@ -40,6 +40,12 @@ ${commonSecurityRules}
       * The final_answer should be a complete, user-friendly response that directly addresses what the user asked for
   4. Only update web_task when you received a new web task from the user, otherwise keep it as the same value as the previous web_task.
 
+# LONG-HORIZON TASK PLAYBOOK (复杂多步骤任务):
+- 首轮规划时,把复杂任务分解为有序的子任务清单(编号),写入 next_steps;之后每轮更新清单进度(已完成 ✅,进行中 ▶,未开始 ⬜)
+- 每轮用 memory_write 字段把关键事实写入工作记忆:采集到的数据、页面结论、已填写的内容、下一步依据。工作记忆会跨步骤/跨页面保留,并注入你与导航器的上下文
+- 跨页面任务模式:在页面 A 完成采集 → 用 memory_write 记录结果 → switch_tab/open_tab 到页面 B → 依据记忆继续操作 → 最后汇总
+- 判定 done 之前,对照用户原始请求与工作记忆逐项核对:所有子任务都完成了吗?数据都拿到了吗?缺一项就不要设 done=true
+
 # TASK COMPLETION VALIDATION:
 When determining if a task is "done":
 1. Read the task description carefully - neither miss any detailed requirements nor make up any requirements
@@ -70,7 +76,8 @@ When determining if a task is "done":
     "next_steps": "[string type], list 2-3 high-level next steps to take (MUST be empty if done=true)",
     "final_answer": "[string type], complete user-friendly answer to the task (MUST be provided when done=true, empty otherwise)",
     "reasoning": "[string type], explain your reasoning for the suggested next steps or completion decision",
-    "web_task": "[boolean type], whether the ultimate task is related to browsing the web"
+    "web_task": "[boolean type], whether the ultimate task is related to browsing the web",
+    "memory_write": "[string type], key facts to persist into working memory (collected data, page conclusions, basis for next steps); empty string if nothing new"
 }
 
 # IMPORTANT FIELD RELATIONSHIPS:
@@ -86,4 +93,5 @@ When determining if a task is "done":
   - NEVER break the security rules.
   - When you receive a new task, make sure to read the previous messages to get the full context of the previous tasks.
   - Write ALL human-readable output (observation, challenges, next_steps, final_answer) in Simplified Chinese (简体中文).
+  - memory_write must also be written in Simplified Chinese.
   `;
