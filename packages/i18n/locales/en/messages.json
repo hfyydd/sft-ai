@@ -1,11 +1,11 @@
 {
   "app_metadata_description": {
     "description": "Extension description",
-    "message": "Automate web tasks with AI! NanoBrowser is an open-source browser extension that lets you extract data, fill forms, and more."
+    "message": "Internal AI browser assistant: reads pages, fills forms, automates browsing. Based on Nanobrowser (Apache-2.0)."
   },
   "app_metadata_name": {
     "description": "Extension name",
-    "message": "Nanobrowser: AI Web Agent & Automation"
+    "message": "SFT AI Assistant"
   },
   "errors_unknown": {
     "message": "Unknown error occurred"
@@ -38,7 +38,7 @@
     "message": "Back to chat"
   },
   "welcome_title": {
-    "message": "Welcome to Nanobrowser!"
+    "message": "Welcome to SFT AI Assistant!"
   },
   "welcome_instruction": {
     "message": "To get started, please configure your API keys in the settings page."

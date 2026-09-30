@@ -1,11 +1,11 @@
 {
   "app_metadata_description": {
     "description": "Extension description",
-    "message": "使用 AI 自動化網頁任務！Nanobrowser 是一款開放原始碼的瀏覽器擴充功能，能協助您擷取資料、填寫表單等。"
+    "message": "內部 AI 瀏覽器助手：讀取頁面、自動填表、翻頁採集（基於 Nanobrowser 開發）。"
   },
   "app_metadata_name": {
     "description": "Extension name",
-    "message": "Nanobrowser：AI 網頁代理程式與自動化"
+    "message": "SFT AI 助手"
   },
   "errors_unknown": {
     "message": "發生未知錯誤"
@@ -38,7 +38,7 @@
     "message": "回到對話"
   },
   "welcome_title": {
-    "message": "歡迎使用 Nanobrowser！"
+    "message": "歡迎使用 SFT AI 助手！"
   },
   "welcome_instruction": {
     "message": "開始使用前，請先完成 API 金鑰的設定。"
