@@ -10,12 +10,12 @@ export const ACTOR_PROFILES = {
     iconBackground: '#2196F3',
   },
   planner: {
-    name: '规划',
+    name: '思考与规划',
     icon: 'icons/planner.svg',
     iconBackground: '#FF9800',
   },
   navigator: {
-    name: '执行',
+    name: '执行动作',
     icon: 'icons/navigator.svg',
     iconBackground: '#40A9FF',
   },

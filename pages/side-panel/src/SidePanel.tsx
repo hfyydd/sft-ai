@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { FiSettings } from 'react-icons/fi';
+import { FiArrowLeft, FiSettings } from 'react-icons/fi';
 import { PiPlusBold } from 'react-icons/pi';
 import { GrHistory } from 'react-icons/gr';
 import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore } from '@extension/storage';
@@ -917,53 +917,53 @@ const SidePanel = () => {
 
   return (
     <div>
-      <div
-        className={`flex h-screen flex-col overflow-hidden border rounded-2xl ${isDarkMode ? 'border-sky-800 bg-slate-900' : 'border-sky-200 bg-gradient-to-b from-sky-50 via-white to-sky-50'}`}>
-        <header className="header relative">
-          <div className="header-logo">
+      <div className={`flex h-screen flex-col overflow-hidden ${isDarkMode ? 'bg-zinc-950' : 'bg-white'}`}>
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
             {showHistory ? (
               <button
                 type="button"
                 onClick={() => handleBackToChat(false)}
-                className={`${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
-                aria-label={t('nav_back_a11y')}>
-                {t('nav_back')}
+                className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                aria-label={t('nav_back_a11y')}
+                tabIndex={0}>
+                <FiArrowLeft className="size-4" />
               </button>
             ) : (
-              <img src="/icon-128.png" alt="SFT AI 助手" className="size-6" />
+              <img src="/icon-128.png" alt="SFT AI 助手" className="size-6 rounded-md" />
             )}
+            <span className={`text-sm font-medium ${isDarkMode ? 'text-zinc-100' : 'text-zinc-800'}`}>
+              {showHistory ? t('chat_history_title') : 'SFT AI 助手'}
+            </span>
           </div>
-          <div className="header-icons">
+          <div className="flex items-center gap-1">
             {!showHistory && (
               <>
                 <button
                   type="button"
                   onClick={handleNewChat}
-                  onKeyDown={e => e.key === 'Enter' && handleNewChat()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                  className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                   aria-label={t('nav_newChat_a11y')}
                   tabIndex={0}>
-                  <PiPlusBold size={20} />
+                  <PiPlusBold className="size-4" />
                 </button>
                 <button
                   type="button"
                   onClick={handleLoadHistory}
-                  onKeyDown={e => e.key === 'Enter' && handleLoadHistory()}
-                  className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+                  className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                   aria-label={t('nav_loadHistory_a11y')}
                   tabIndex={0}>
-                  <GrHistory size={20} />
+                  <GrHistory className="size-4" />
                 </button>
               </>
             )}
             <button
               type="button"
               onClick={() => chrome.runtime.openOptionsPage()}
-              onKeyDown={e => e.key === 'Enter' && chrome.runtime.openOptionsPage()}
-              className={`header-icon ${isDarkMode ? 'text-sky-400 hover:text-sky-300' : 'text-sky-400 hover:text-sky-500'} cursor-pointer`}
+              className="flex size-8 items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               aria-label={t('nav_settings_a11y')}
               tabIndex={0}>
-              <FiSettings size={20} />
+              <FiSettings className="size-4" />
             </button>
           </div>
         </header>
@@ -982,9 +982,9 @@ const SidePanel = () => {
             {/* Show loading state while checking model configuration */}
             {hasConfiguredModels === null && (
               <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                 <div className="text-center">
-                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-sky-400 border-t-transparent"></div>
+                  <div className="mx-auto mb-4 size-8 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent"></div>
                   <p>{t('status_checkingConfig')}</p>
                 </div>
               </div>
@@ -993,17 +993,19 @@ const SidePanel = () => {
             {/* Show setup message when no models are configured */}
             {hasConfiguredModels === false && (
               <div
-                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-sky-300' : 'text-sky-600'}`}>
+                className={`flex flex-1 items-center justify-center p-8 ${isDarkMode ? 'text-zinc-400' : 'text-zinc-500'}`}>
                 <div className="max-w-md text-center">
                   <img src="/icon-128.png" alt="SFT AI 助手" className="mx-auto mb-4 size-12" />
-                  <h3 className={`mb-2 text-lg font-semibold ${isDarkMode ? 'text-sky-200' : 'text-sky-700'}`}>
+                  <h3 className={`mb-2 text-lg font-semibold ${isDarkMode ? 'text-zinc-200' : 'text-zinc-700'}`}>
                     {t('welcome_title')}
                   </h3>
                   <p className="mb-4">{t('welcome_instruction')}</p>
                   <button
                     onClick={() => chrome.runtime.openOptionsPage()}
                     className={`my-4 rounded-lg px-4 py-2 font-medium transition-colors ${
-                      isDarkMode ? 'bg-sky-600 text-white hover:bg-sky-700' : 'bg-sky-500 text-white hover:bg-sky-600'
+                      isDarkMode
+                        ? 'bg-zinc-900 text-white hover:bg-zinc-700'
+                        : 'bg-zinc-900 text-white hover:bg-zinc-900'
                     }`}>
                     {t('welcome_openSettings')}
                   </button>
@@ -1016,7 +1018,7 @@ const SidePanel = () => {
               <div className="flex min-h-0 flex-1 flex-col">
                 {/* 消息区:占满剩余空间,独立滚动 */}
                 <div
-                  className={`scrollbar-gutter-stable min-h-0 flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 ${isDarkMode ? 'bg-slate-900/80' : ''}`}>
+                  className={`scrollbar-gutter-stable min-h-0 flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 ${isDarkMode ? 'dark:bg-zinc-950/80' : ''}`}>
                   {messages.length === 0 ? (
                     <div className="flex h-full items-center justify-center px-6">
                       <div
@@ -1036,7 +1038,7 @@ const SidePanel = () => {
                 </div>
                 {/* 输入区:固定在底部 */}
                 <div
-                  className={`shrink-0 border-t p-2 ${isDarkMode ? 'border-sky-900 bg-slate-900/90' : 'border-sky-100 bg-white/80'} shadow-sm backdrop-blur-sm`}>
+                  className={`shrink-0 border-t p-2 ${isDarkMode ? 'border-zinc-800 dark:bg-zinc-950' : 'border-zinc-200 bg-white/80'} shadow-sm backdrop-blur-sm`}>
                   <ChatInput
                     onSendMessage={handleSendMessage}
                     onStopTask={handleStopTask}

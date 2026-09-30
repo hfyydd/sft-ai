@@ -1,54 +1,72 @@
 import type { Message } from '@extension/storage';
-import { ACTOR_PROFILES } from '../types/message';
-import { memo } from 'react';
+import { memo, useState } from 'react';
 
 interface MessageListProps {
   messages: Message[];
   isDarkMode?: boolean;
 }
 
+/** 现代化消息流:用户右对齐气泡;规划=安静思考块;连续执行动作收敛为步骤组;最后一条规划消息按正式回答呈现 */
 export default memo(function MessageList({ messages, isDarkMode = false }: MessageListProps) {
-  return (
-    <div className="max-w-full space-y-3">
-      {messages.map((message, index) => (
-        <MessageBlock
-          key={`${message.actor}-${message.timestamp}-${index}`}
-          message={message}
-          isSameActor={index > 0 ? messages[index - 1].actor === message.actor : false}
-          isDarkMode={isDarkMode}
-        />
-      ))}
-    </div>
-  );
+  const nodes: JSX.Element[] = [];
+  let key = 0;
+  let i = 0;
+  while (i < messages.length) {
+    const message = messages[i];
+    if (message.actor === 'navigator') {
+      const group: { message: Message; failed: boolean }[] = [];
+      let j = i;
+      while (j < messages.length && messages[j].actor === 'navigator') {
+        group.push({ message: messages[j], failed: /失败|错误|failed|error|cannot/i.test(messages[j].content) });
+        j++;
+      }
+      nodes.push(<NavigatorGroup key={`g${key++}`} items={group} isDarkMode={isDarkMode} />);
+      i = j;
+      continue;
+    }
+    nodes.push(
+      <MessageBlock key={`m${key++}`} message={message} isLast={i === messages.length - 1} isDarkMode={isDarkMode} />,
+    );
+    i++;
+  }
+  return <div className="max-w-full space-y-5">{nodes}</div>;
 });
 
 interface MessageBlockProps {
   message: Message;
-  isSameActor: boolean;
+  isLast: boolean;
   isDarkMode?: boolean;
 }
 
-function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlockProps) {
+function MessageBlock({ message, isLast, isDarkMode = false }: MessageBlockProps) {
   if (!message.actor) {
     console.error('No actor found');
     return <div />;
   }
-  const actor = ACTOR_PROFILES[message.actor as keyof typeof ACTOR_PROFILES];
   const isProgress = message.content === 'Showing progress...';
   const isUser = message.actor === 'user';
+  const isPlanner = message.actor === 'planner';
 
-  // 用户消息:右侧气泡,无头像
-  if (isUser && !isProgress) {
+  if (isProgress) {
+    return (
+      <div className={`h-1 w-28 overflow-hidden rounded ${isDarkMode ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
+        <div className="h-full w-1/2 animate-progress rounded bg-zinc-400" />
+      </div>
+    );
+  }
+
+  // 用户消息:右对齐中性气泡
+  if (isUser) {
     return (
       <div className="flex max-w-full justify-end">
-        <div className="max-w-[85%]">
+        <div className="max-w-[88%]">
           <div
-            className={`whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2 text-sm ${
-              isDarkMode ? 'bg-sky-600 text-white' : 'bg-sky-500 text-white'
+            className={`whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2.5 text-sm leading-relaxed ${
+              isDarkMode ? 'bg-zinc-800 text-zinc-100' : 'bg-zinc-100 text-zinc-800'
             }`}>
             {message.content}
           </div>
-          <div className={`mt-1 text-right text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+          <div className={`mt-1 text-right text-[11px] ${isDarkMode ? 'text-zinc-600' : 'text-zinc-400'}`}>
             {formatTimestamp(message.timestamp)}
           </div>
         </div>
@@ -56,47 +74,99 @@ function MessageBlock({ message, isSameActor, isDarkMode = false }: MessageBlock
     );
   }
 
+  // 系统消息:居中弱化
+  if (message.actor === 'system') {
+    return (
+      <div className={`py-1 text-center text-xs ${isDarkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+        {message.content}
+      </div>
+    );
+  }
+
+  // 规划消息:最后一条视为正式回答(平文、正常色),其余为安静的思考块
+  if (isPlanner) {
+    if (isLast) {
+      return (
+        <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-800 dark:text-zinc-100">
+          {message.content}
+        </div>
+      );
+    }
+    return (
+      <div>
+        <SectionLabel text="思考与规划" isDarkMode={isDarkMode} />
+        <div
+          className={`whitespace-pre-wrap break-words pl-3 text-sm leading-relaxed ${
+            isDarkMode ? 'text-zinc-400' : 'text-zinc-500'
+          } ${isDarkMode ? 'border-l-2 border-zinc-800' : 'border-l-2 border-zinc-200'}`}>
+          {message.content}
+        </div>
+      </div>
+    );
+  }
+
+  // 兜底:其他 actor 按普通回答呈现
+  return (
+    <div className="whitespace-pre-wrap break-words text-sm leading-relaxed text-zinc-800 dark:text-zinc-100">
+      {message.content}
+    </div>
+  );
+}
+
+/** 连续的导航器动作收敛为一个步骤组 */
+function NavigatorGroup({
+  items,
+  isDarkMode,
+}: {
+  items: { message: Message; failed: boolean }[];
+  isDarkMode: boolean;
+}) {
+  const [open, setOpen] = useState(true);
+  const allFailed = items.every(it => it.failed);
   return (
     <div
-      className={`flex max-w-full gap-2.5 ${
-        !isSameActor
-          ? `mt-3 pt-3 first:mt-0 first:pt-0 ${isDarkMode ? 'border-t border-slate-700/60' : 'border-t border-sky-100'} first:border-t-0`
-          : ''
+      className={`rounded-lg border p-2 ${
+        isDarkMode ? 'border-zinc-800 bg-zinc-900/60' : 'border-zinc-200/80 bg-zinc-50'
       }`}>
-      {!isSameActor && (
-        <div
-          className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full"
-          style={{ backgroundColor: actor.iconBackground }}>
-          <img src={actor.icon} alt={actor.name} className="size-5" />
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`flex w-full items-center gap-1.5 text-left text-[11px] font-medium uppercase tracking-wide transition-colors ${
+          isDarkMode ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'
+        }`}>
+        <span className={`inline-block transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+        执行动作 · {items.length}
+      </button>
+      {open && (
+        <div className="mt-1.5 space-y-1.5">
+          {items.map((it, idx) => (
+            <div key={idx} className="flex items-start gap-2">
+              <span
+                className={`mt-1.5 inline-block size-1.5 shrink-0 rounded-full ${
+                  it.failed ? 'bg-red-500' : isDarkMode ? 'bg-zinc-600' : 'bg-zinc-300'
+                }`}
+              />
+              <span
+                className={`whitespace-pre-wrap break-words text-xs leading-relaxed ${
+                  it.failed ? 'text-red-500 dark:text-red-400' : isDarkMode ? 'text-zinc-400' : 'text-zinc-600'
+                }`}>
+                {it.message.content}
+              </span>
+            </div>
+          ))}
         </div>
       )}
-      {isSameActor && <div className="w-7 shrink-0" />}
+    </div>
+  );
+}
 
-      <div className="min-w-0 flex-1">
-        {!isSameActor && (
-          <div className={`mb-1 text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {actor.name}
-          </div>
-        )}
-
-        <div
-          className={`inline-block max-w-full whitespace-pre-wrap break-words rounded-2xl rounded-tl-md px-3 py-2 text-sm ${
-            isDarkMode ? 'bg-slate-800 text-gray-200' : 'bg-white/90 text-gray-700 shadow-sm ring-1 ring-sky-100'
-          }`}>
-          {isProgress ? (
-            <div className={`h-1 w-24 overflow-hidden rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-200'}`}>
-              <div className="h-full animate-progress bg-blue-500" />
-            </div>
-          ) : (
-            message.content
-          )}
-        </div>
-        {!isProgress && (
-          <div className={`mt-1 text-xs ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-            {formatTimestamp(message.timestamp)}
-          </div>
-        )}
-      </div>
+function SectionLabel({ text, isDarkMode }: { text: string; isDarkMode: boolean }) {
+  return (
+    <div
+      className={`mb-1 text-[11px] font-medium uppercase tracking-wide ${
+        isDarkMode ? 'text-zinc-500' : 'text-zinc-400'
+      }`}>
+      {text}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { FaMicrophone } from 'react-icons/fa';
+import { FiPaperclip } from 'react-icons/fi';
 import { AiOutlineLoading3Quarters } from 'react-icons/ai';
 import { t } from '@extension/i18n';
 
@@ -185,20 +186,20 @@ export default function ChatInput({
   return (
     <form
       onSubmit={handleSubmit}
-      className={`overflow-hidden rounded-lg border transition-colors ${disabled ? 'cursor-not-allowed' : 'focus-within:border-sky-400 hover:border-sky-400'} ${isDarkMode ? 'border-slate-700' : ''}`}
+      className={`overflow-hidden rounded-xl border bg-white transition-colors dark:bg-zinc-900 ${disabled ? 'opacity-60' : 'focus-within:border-zinc-400 dark:focus-within:border-zinc-500'} ${isDarkMode ? 'border-zinc-700' : 'border-zinc-200'}`}
       aria-label={t('chat_input_form')}>
       <div className="flex flex-col">
         {/* File attachments display */}
         {attachedFiles.length > 0 && (
           <div
             className={`flex flex-wrap gap-2 border-b p-2 ${
-              isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-gray-200 bg-gray-50'
+              isDarkMode ? 'border-zinc-700 bg-zinc-900' : 'border-zinc-200 bg-zinc-50'
             }`}>
             {attachedFiles.map((file, index) => (
               <div
                 key={index}
                 className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs ${
-                  isDarkMode ? 'bg-slate-700 text-gray-300' : 'bg-gray-200 text-gray-700'
+                  isDarkMode ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-200 text-zinc-700'
                 }`}>
                 <span className="text-xs">📎</span>
                 <span className="max-w-[150px] truncate">{file.name}</span>
@@ -206,7 +207,7 @@ export default function ChatInput({
                   type="button"
                   onClick={() => handleRemoveFile(index)}
                   className={`ml-1 rounded-sm transition-colors ${
-                    isDarkMode ? 'hover:bg-slate-600' : 'hover:bg-gray-300'
+                    isDarkMode ? 'hover:bg-zinc-600' : 'hover:bg-zinc-300'
                   }`}
                   aria-label={`Remove ${file.name}`}>
                   <span className="text-xs">✕</span>
@@ -227,21 +228,21 @@ export default function ChatInput({
           className={`w-full resize-none border-none p-2 focus:outline-none ${
             disabled
               ? isDarkMode
-                ? 'cursor-not-allowed bg-slate-800 text-gray-400'
-                : 'cursor-not-allowed bg-gray-100 text-gray-500'
+                ? 'cursor-not-allowed bg-zinc-900 text-zinc-400'
+                : 'cursor-not-allowed bg-zinc-100 text-zinc-500'
               : isDarkMode
-                ? 'bg-slate-800 text-gray-200'
+                ? 'bg-zinc-900 text-zinc-200'
                 : 'bg-white'
           }`}
-          placeholder={attachedFiles.length > 0 ? 'Add a message (optional)...' : t('chat_input_placeholder')}
+          placeholder={attachedFiles.length > 0 ? '已附加文件,可继续输入说明' : t('chat_input_placeholder')}
           aria-label={t('chat_input_editor')}
         />
 
         <div
           className={`flex items-center justify-between px-2 py-1.5 ${
-            disabled ? (isDarkMode ? 'bg-slate-800' : 'bg-gray-100') : isDarkMode ? 'bg-slate-800' : 'bg-white'
+            disabled ? (isDarkMode ? 'bg-zinc-900' : 'bg-zinc-100') : isDarkMode ? 'bg-zinc-900' : 'bg-white'
           }`}>
-          <div className="flex gap-2 text-gray-500">
+          <div className="flex gap-2 text-zinc-500">
             {/* File attachment button */}
             <button
               type="button"
@@ -253,10 +254,10 @@ export default function ChatInput({
                 disabled
                   ? 'cursor-not-allowed opacity-50'
                   : isDarkMode
-                    ? 'text-gray-400 hover:bg-slate-700 hover:text-gray-200'
-                    : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                    ? 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                    : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700'
               }`}>
-              <span className="text-lg">📎</span>
+              <FiPaperclip className="size-4" />
             </button>
 
             {/* Hidden file input */}
@@ -288,8 +289,8 @@ export default function ChatInput({
                     : isRecording
                       ? 'bg-red-500 text-white hover:bg-red-600'
                       : isDarkMode
-                        ? 'text-gray-400 hover:bg-slate-700 hover:text-gray-200'
-                        : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                        ? 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                        : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700'
                 }`}>
                 {isProcessingSpeech ? (
                   <AiOutlineLoading3Quarters className="size-4 animate-spin" />
@@ -304,7 +305,7 @@ export default function ChatInput({
             <button
               type="button"
               onClick={onStopTask}
-              className="rounded-md bg-red-500 px-3 py-1 text-white transition-colors hover:bg-red-600">
+              className="rounded-full bg-red-500 px-4 py-1.5 text-sm text-white transition-colors hover:bg-red-600">
               {t('chat_buttons_stop')}
             </button>
           ) : historicalSessionId ? (
@@ -313,7 +314,7 @@ export default function ChatInput({
               onClick={handleReplay}
               disabled={!historicalSessionId}
               aria-disabled={!historicalSessionId}
-              className={`rounded-md bg-green-500 px-3 py-1 text-white transition-colors hover:enabled:bg-green-600 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}>
+              className={`rounded-full bg-zinc-900 px-4 py-1.5 text-sm text-white transition-colors hover:enabled:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:enabled:bg-zinc-300 ${!historicalSessionId ? 'cursor-not-allowed opacity-50' : ''}`}>
               {t('chat_buttons_replay')}
             </button>
           ) : (
@@ -321,7 +322,7 @@ export default function ChatInput({
               type="submit"
               disabled={isSendButtonDisabled}
               aria-disabled={isSendButtonDisabled}
-              className={`rounded-md bg-[#19C2FF] px-3 py-1 text-white transition-colors hover:enabled:bg-[#0073DC] ${isSendButtonDisabled ? 'cursor-not-allowed opacity-50' : ''}`}>
+              className={`rounded-full bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:enabled:bg-zinc-700 disabled:bg-zinc-200 disabled:text-zinc-400 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:enabled:bg-zinc-300 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 ${isSendButtonDisabled ? 'cursor-not-allowed' : ''}`}>
               {t('chat_buttons_send')}
             </button>
           )}
