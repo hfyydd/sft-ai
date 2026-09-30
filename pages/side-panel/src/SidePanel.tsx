@@ -261,9 +261,14 @@ const SidePanel = () => {
       }
 
       if (!skip) {
+        let displayContent = content || '';
+        // SW 端旧版本可能直发动作原名 "done",UI 层统一兜底为中文
+        if (actor === Actors.NAVIGATOR && displayContent.trim().toLowerCase() === 'done') {
+          displayContent = '任务已完成';
+        }
         appendMessage({
           actor,
-          content: content || '',
+          content: displayContent,
           timestamp: timestamp,
         });
       }
@@ -913,7 +918,7 @@ const SidePanel = () => {
   return (
     <div>
       <div
-        className={`flex h-screen flex-col ${isDarkMode ? 'bg-slate-900' : "bg-[url('/bg.jpg')] bg-cover bg-no-repeat"} overflow-hidden border ${isDarkMode ? 'border-sky-800' : 'border-[rgb(186,230,253)]'} rounded-2xl`}>
+        className={`flex h-screen flex-col overflow-hidden border rounded-2xl ${isDarkMode ? 'border-sky-800 bg-slate-900' : 'border-sky-200 bg-gradient-to-b from-sky-50 via-white to-sky-50'}`}>
         <header className="header relative">
           <div className="header-logo">
             {showHistory ? (
@@ -1008,57 +1013,47 @@ const SidePanel = () => {
 
             {/* Show normal chat interface when models are configured */}
             {hasConfiguredModels === true && (
-              <>
-                {messages.length === 0 && (
-                  <>
-                    <div
-                      className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} mb-2 p-2 shadow-sm backdrop-blur-sm`}>
-                      <ChatInput
-                        onSendMessage={handleSendMessage}
-                        onStopTask={handleStopTask}
-                        onMicClick={handleMicClick}
-                        isRecording={isRecording}
-                        isProcessingSpeech={isProcessingSpeech}
-                        disabled={!inputEnabled || isHistoricalSession}
-                        showStopButton={showStopButton}
-                        setContent={setter => {
-                          setInputTextRef.current = setter;
-                        }}
-                        isDarkMode={isDarkMode}
-                        historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
-                        onReplay={handleReplay}
-                      />
+              <div className="flex min-h-0 flex-1 flex-col">
+                {/* 消息区:占满剩余空间,独立滚动 */}
+                <div
+                  className={`scrollbar-gutter-stable min-h-0 flex-1 overflow-x-hidden overflow-y-auto scroll-smooth p-3 ${isDarkMode ? 'bg-slate-900/80' : ''}`}>
+                  {messages.length === 0 ? (
+                    <div className="flex h-full items-center justify-center px-6">
+                      <div
+                        className={`text-center text-sm leading-6 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        <img src="/icon-128.png" alt="SFT AI 助手" className="mx-auto mb-3 size-10 opacity-80" />
+                        输入任务开始,例如:
+                        <br />
+                        「打开一个网页并总结内容」「帮我把这个页面的表格提取出来」
+                      </div>
                     </div>
-                  </>
-                )}
-                {messages.length > 0 && (
-                  <div
-                    className={`scrollbar-gutter-stable flex-1 overflow-x-hidden overflow-y-scroll scroll-smooth p-2 ${isDarkMode ? 'bg-slate-900/80' : ''}`}>
-                    <MessageList messages={messages} isDarkMode={isDarkMode} />
-                    <div ref={messagesEndRef} />
-                  </div>
-                )}
-                {messages.length > 0 && (
-                  <div
-                    className={`border-t ${isDarkMode ? 'border-sky-900' : 'border-sky-100'} p-2 shadow-sm backdrop-blur-sm`}>
-                    <ChatInput
-                      onSendMessage={handleSendMessage}
-                      onStopTask={handleStopTask}
-                      onMicClick={handleMicClick}
-                      isRecording={isRecording}
-                      isProcessingSpeech={isProcessingSpeech}
-                      disabled={!inputEnabled || isHistoricalSession}
-                      showStopButton={showStopButton}
-                      setContent={setter => {
-                        setInputTextRef.current = setter;
-                      }}
-                      isDarkMode={isDarkMode}
-                      historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
-                      onReplay={handleReplay}
-                    />
-                  </div>
-                )}
-              </>
+                  ) : (
+                    <>
+                      <MessageList messages={messages} isDarkMode={isDarkMode} />
+                      <div ref={messagesEndRef} />
+                    </>
+                  )}
+                </div>
+                {/* 输入区:固定在底部 */}
+                <div
+                  className={`shrink-0 border-t p-2 ${isDarkMode ? 'border-sky-900 bg-slate-900/90' : 'border-sky-100 bg-white/80'} shadow-sm backdrop-blur-sm`}>
+                  <ChatInput
+                    onSendMessage={handleSendMessage}
+                    onStopTask={handleStopTask}
+                    onMicClick={handleMicClick}
+                    isRecording={isRecording}
+                    isProcessingSpeech={isProcessingSpeech}
+                    disabled={!inputEnabled || isHistoricalSession}
+                    showStopButton={showStopButton}
+                    setContent={setter => {
+                      setInputTextRef.current = setter;
+                    }}
+                    isDarkMode={isDarkMode}
+                    historicalSessionId={isHistoricalSession && replayEnabled ? currentSessionId : null}
+                    onReplay={handleReplay}
+                  />
+                </div>
+              </div>
             )}
           </>
         )}
