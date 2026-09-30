@@ -247,8 +247,8 @@ export default function ChatInput({
               type="button"
               onClick={handleFileSelect}
               disabled={disabled}
-              aria-label="Attach files"
-              title="Attach text files (txt, md, json, csv, etc.)"
+              aria-label="附加文件"
+              title="附加文本文件(txt、md、json、csv 等)"
               className={`rounded-md p-1.5 transition-colors ${
                 disabled
                   ? 'cursor-not-allowed opacity-50'

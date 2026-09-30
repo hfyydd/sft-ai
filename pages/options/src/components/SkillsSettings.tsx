@@ -42,7 +42,7 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
   const handleSave = async () => {
     if (!editing) return;
     if (!editing.name.trim() || !editing.prompt.trim()) {
-      setError('Name and prompt are required.');
+      setError('名称和提示词不能为空。');
       return;
     }
     setError('');
@@ -78,11 +78,11 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
     try {
       const data = JSON.parse(await file.text());
       const incoming: Array<Partial<Skill> & Pick<Skill, 'name' | 'prompt'>> = Array.isArray(data) ? data : data.skills;
-      if (!Array.isArray(incoming)) throw new Error('Expected { skills: [...] } or an array');
+      if (!Array.isArray(incoming)) throw new Error('内容格式应为 { skills: [...] } 或数组');
       await skillStore.importSkills(incoming);
       setSkills(await skillStore.getSkills());
     } catch (err) {
-      setError(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`导入失败:${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -101,33 +101,31 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
     <section className="space-y-6">
       <div
         className={`rounded-lg border ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-blue-100 bg-gray-50'} p-6 text-left shadow-sm`}>
-        <h2 className={`mb-2 text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>Skills</h2>
+        <h2 className={`mb-2 text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>技能</h2>
         <p className={`mb-4 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-          Skills are reusable instructions injected into the agents&apos; system prompts.
-          <b> Always-on</b> skills apply to every task; <b>manual</b> skills are stored for per-conversation selection
-          (selection UI coming soon). Tool whitelist is stored now and will be enforced by the executor in an upcoming
-          release.
+          技能是可复用的指令,会注入到 agent 的系统提示中。<b>常驻</b>技能对每个任务生效;<b>手动</b>技能保留备用,
+          会话内选用即将支持。工具白名单目前已保存,执行器强制生效即将上线。
         </p>
 
         <div className="mb-4 flex flex-wrap gap-2">
           <button className={btnPrimary} onClick={() => setEditing(emptyDraft())}>
             <span className="flex items-center gap-1">
-              <FiPlus /> Add Skill
+              <FiPlus /> 添加技能
             </span>
           </button>
           <button className={btnGhost} onClick={handleLoadStarters}>
             <span className="flex items-center gap-1">
-              <FiBookOpen /> Load Starter Pack
+              <FiBookOpen /> 加载内置技能包
             </span>
           </button>
           <button className={btnGhost} onClick={handleExport}>
             <span className="flex items-center gap-1">
-              <FiDownload /> Export JSON
+              <FiDownload /> 导出 JSON
             </span>
           </button>
           <label className={`${btnGhost} cursor-pointer`}>
             <span className="flex items-center gap-1">
-              <FiUpload /> Import JSON
+              <FiUpload /> 导入 JSON
             </span>
             <input
               type="file"
@@ -147,54 +145,52 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
         {editing && (
           <div className={`${cardCls} mb-6 space-y-3`}>
             <h3 className={`text-base font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-              {skills.some(s => s.id === editing.id) ? 'Edit Skill' : 'New Skill'}
+              {skills.some(s => s.id === editing.id) ? '编辑技能' : '新建技能'}
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Name</label>
+                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>名称</label>
                 <input
                   className={inputCls}
                   value={editing.name}
                   onChange={e => setEditing({ ...editing, name: e.target.value })}
-                  placeholder="e.g. 自动填表"
+                  placeholder="例如:自动填表"
                 />
               </div>
               <div>
-                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Mode</label>
+                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>模式</label>
                 <select
                   className={inputCls}
                   value={editing.mode}
                   onChange={e => setEditing({ ...editing, mode: e.target.value as SkillMode })}>
-                  <option value="manual">Manual (per-conversation)</option>
-                  <option value="always">Always-on (inject into every task)</option>
+                  <option value="manual">手动(按会话选用)</option>
+                  <option value="always">常驻(注入每个任务)</option>
                 </select>
               </div>
             </div>
             <div>
-              <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Description
-              </label>
+              <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>描述</label>
               <input
                 className={inputCls}
                 value={editing.description}
                 onChange={e => setEditing({ ...editing, description: e.target.value })}
-                placeholder="What is this skill for?"
+                placeholder="这个技能用来做什么?"
               />
             </div>
             <div>
               <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Prompt (injected into system prompt)
+                提示词(注入到系统提示)
               </label>
               <textarea
                 className={`${inputCls} min-h-[140px]`}
                 value={editing.prompt}
                 onChange={e => setEditing({ ...editing, prompt: e.target.value })}
-                placeholder="Instructions the agents should follow when this skill is active…"
+                placeholder="技能生效时 agent 需要遵循的指令…"
               />
             </div>
             <div>
               <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                Tool whitelist (comma separated, empty = all tools; enforcement coming soon)
+                工具白名单(逗号分隔,留空 = 全部工具;强制生效即将支持)
               </label>
               <input
                 className={inputCls}
@@ -212,25 +208,25 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                             .filter(Boolean),
                   });
                 }}
-                placeholder="click, type_text, scroll …"
+                placeholder="click、type_text、scroll …"
               />
             </div>
             <div className="flex gap-2 pt-1">
               <button className={btnPrimary} onClick={handleSave}>
-                Save
+                保存
               </button>
               <button className={btnGhost} onClick={() => setEditing(null)}>
-                Cancel
+                取消
               </button>
             </div>
           </div>
         )}
 
         {loading ? (
-          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Loading…</p>
+          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>加载中…</p>
         ) : skills.length === 0 ? (
           <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-            No skills yet. Add one manually or load the starter pack.
+            还没有技能。手动添加,或一键加载内置技能包。
           </p>
         ) : (
           <div className="space-y-3">
@@ -250,12 +246,12 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                               ? 'bg-slate-600 text-gray-300'
                               : 'bg-gray-300 text-gray-700'
                         }`}>
-                        {skill.mode === 'always' ? 'Always-on' : 'Manual'}
+                        {skill.mode === 'always' ? '常驻' : '手动'}
                       </span>
                       {!skill.enabled && (
                         <span
                           className={`rounded px-2 py-0.5 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          disabled
+                          未启用
                         </span>
                       )}
                     </div>
@@ -288,13 +284,13 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                     </div>
                     <button
                       className={`rounded p-2 hover:bg-sky-500/20`}
-                      title="Edit"
+                      title="编辑"
                       onClick={() => setEditing(skill)}>
                       <FiEdit2 className={isDarkMode ? 'text-gray-300' : 'text-gray-600'} />
                     </button>
                     <button
                       className={`rounded p-2 hover:bg-red-500/20`}
-                      title="Delete"
+                      title="删除"
                       onClick={() => void handleDelete(skill.id)}>
                       <FiTrash2 className={isDarkMode ? 'text-gray-300' : 'text-gray-600'} />
                     </button>

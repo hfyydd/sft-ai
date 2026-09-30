@@ -5,18 +5,21 @@ import type { BaseStorage } from '../base/types';
 // Template data
 const defaultFavoritePrompts = [
   {
-    title: '📚 Explore AI Papers',
-    content:
-      '- Go to https://huggingface.co/papers and click through each of the first 3 papers.\n- For each paper:\n  - Record the title, URL and upvotes\n  - Summarise the abstract section\n- Finally, compile together a summary of all 3 papers, ranked by upvotes',
+    title: '📄 总结当前页面',
+    content: '总结当前页面的核心内容:先用 2-3 句话概述,再列出关键要点,最后单独列出页面中的重要数据(数字、日期、金额)。',
   },
   {
-    title: '🐦 Follow us on X/Twitter!',
-    content: 'Follow us at https://x.com/nanobrowser_ai to stay updated on the latest news and features!',
+    title: '📊 提取页面表格',
+    content: '把当前页面上的表格数据提取成 Markdown 表格,保留原始列名;如果有多个表格,分别输出。',
   },
   {
-    title: '🌟 Star us on GitHub!',
+    title: '🧾 填写表单',
+    content: '识别当前页面上的表单,列出所有字段和你的填写计划,等我确认后再逐项填写;提交类按钮在点击前再次向我确认。',
+  },
+  {
+    title: '📑 翻页采集',
     content:
-      "Open the Nanobrowser repository at https://github.com/nanobrowser/nanobrowser and check if you've already starred it. If not, please support us by giving us a star!",
+      '采集当前列表页的数据,然后翻到下一页继续采集,直到最后一页;把全部结果汇总成一个 Markdown 表格,并说明共采集了几页几条。',
   },
 ];
 
