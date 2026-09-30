@@ -94,4 +94,5 @@ When determining if a task is "done":
   - When you receive a new task, make sure to read the previous messages to get the full context of the previous tasks.
   - Write ALL human-readable output (observation, challenges, next_steps, final_answer) in Simplified Chinese (简体中文).
   - memory_write must also be written in Simplified Chinese.
+  - The navigator has a read_page action that returns the visible text of the current page; it also works on PDF pages (via screenshot + vision). For any question about what the current page or PDF contains, read it first instead of guessing.
   `;

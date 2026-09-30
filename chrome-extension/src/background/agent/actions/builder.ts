@@ -29,6 +29,7 @@ import { createLogger } from '@src/background/log';
 import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
+import { HumanMessage } from '@langchain/core/messages';
 
 const logger = createLogger('Action');
 
@@ -396,11 +397,37 @@ export class ActionBuilder {
           },
           args: [input.maxLength || 6000],
         });
-        const text = ((result?.result as string) || '').trim();
+        let text = ((result?.result as string) || '').trim();
+
+        // 页面没有 DOM 文本(典型:内置查看器渲染的 PDF)。回退:截屏 + 视觉模型识别
         if (!text) {
-          const emptyMsg = t('act_readPage_empty');
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
-          return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
+          const visionMsg = t('act_readPage_vision');
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, visionMsg);
+          const tab = await chrome.tabs.get(page.tabId);
+          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 85 });
+          const vision = await this.extractorLLM.invoke([
+            new HumanMessage({
+              content: [
+                {
+                  type: 'text',
+                  text: '这是浏览器当前标签页的截图(可能是 PDF 或特殊页面)。请用简体中文完整提取/总结图中全部可见内容,包括标题、正文要点与关键数字。',
+                },
+                { type: 'image_url', image_url: { url: dataUrl } },
+              ],
+            }),
+          ]);
+          text = (typeof vision.content === 'string' ? vision.content : JSON.stringify(vision.content)).trim();
+          if (!text) {
+            const emptyMsg = t('act_readPage_empty');
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
+            return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
+          }
+          const okMsg = t('act_readPage_vision_ok');
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
+          return new ActionResult({
+            extractedContent: okMsg + ':\n' + text,
+            includeInMemory: true,
+          });
         }
         const msg = t('act_readPage_ok') + '(' + text.length + ' 字符)';
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);

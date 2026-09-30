@@ -992,5 +992,11 @@
   },
   "act_readPage_fail": {
     "message": "读取页面文本失败:"
+  },
+  "act_readPage_vision": {
+    "message": "页面无 DOM 文本,正在截屏并用视觉模型识别…"
+  },
+  "act_readPage_vision_ok": {
+    "message": "已通过截图识别页面内容"
   }
 }
