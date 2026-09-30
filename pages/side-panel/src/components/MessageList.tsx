@@ -1,13 +1,16 @@
 import type { Message } from '@extension/storage';
 import { memo, useState } from 'react';
+import ThinkingIndicator from './ThinkingIndicator';
 
 interface MessageListProps {
   messages: Message[];
   isDarkMode?: boolean;
+  /** 任务运行中:消息流底部显示轮换的「思考中」状态语 */
+  running?: boolean;
 }
 
 /** 现代化消息流:用户右对齐气泡;规划=安静思考块;连续执行动作收敛为步骤组;最后一条规划消息按正式回答呈现 */
-export default memo(function MessageList({ messages, isDarkMode = false }: MessageListProps) {
+export default memo(function MessageList({ messages, isDarkMode = false, running = false }: MessageListProps) {
   const nodes: JSX.Element[] = [];
   let key = 0;
   let i = 0;
@@ -17,8 +20,17 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
       const group: { message: Message; failed: boolean }[] = [];
       let j = i;
       while (j < messages.length && messages[j].actor === 'navigator') {
+        // 进度条消息单独渲染,不进步骤组
+        if (messages[j].content === 'Showing progress...') {
+          j++;
+          continue;
+        }
         group.push({ message: messages[j], failed: /失败|错误|failed|error|cannot/i.test(messages[j].content) });
         j++;
+      }
+      if (group.length === 0) {
+        i = j;
+        continue;
       }
       nodes.push(<NavigatorGroup key={`g${key++}`} items={group} isDarkMode={isDarkMode} />);
       i = j;
@@ -29,7 +41,12 @@ export default memo(function MessageList({ messages, isDarkMode = false }: Messa
     );
     i++;
   }
-  return <div className="max-w-full space-y-5">{nodes}</div>;
+  return (
+    <div className="max-w-full space-y-5">
+      {nodes}
+      {running && <ThinkingIndicator isDarkMode={isDarkMode} />}
+    </div>
+  );
 });
 
 interface MessageBlockProps {

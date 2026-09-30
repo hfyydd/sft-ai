@@ -88,11 +88,11 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       }
 
       // clean the model output
-      const observation = filterExternalContent(modelOutput.observation);
-      const final_answer = filterExternalContent(modelOutput.final_answer);
-      const next_steps = filterExternalContent(modelOutput.next_steps);
-      const challenges = filterExternalContent(modelOutput.challenges);
-      const reasoning = filterExternalContent(modelOutput.reasoning);
+      let observation = filterExternalContent(modelOutput.observation);
+      let final_answer = filterExternalContent(modelOutput.final_answer);
+      let next_steps = filterExternalContent(modelOutput.next_steps);
+      let challenges = filterExternalContent(modelOutput.challenges);
+      let reasoning = filterExternalContent(modelOutput.reasoning);
 
       const cleanedPlan: PlannerOutput = {
         ...modelOutput,
@@ -102,6 +102,14 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
         final_answer,
         next_steps,
       };
+
+      // 模型偶尔会把换行输出成字面 \n,统一还原为真实换行
+      const unescapeLiteralNewlines = (s: string) => s.replace(/\\n/g, '\n');
+      observation = unescapeLiteralNewlines(observation);
+      challenges = unescapeLiteralNewlines(challenges);
+      reasoning = unescapeLiteralNewlines(reasoning);
+      final_answer = unescapeLiteralNewlines(final_answer);
+      next_steps = unescapeLiteralNewlines(next_steps);
 
       // Agent Loop v2: 规划器把关键事实写入工作记忆
       const memoryWrite = (cleanedPlan.memory_write || '').trim();

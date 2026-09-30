@@ -1031,7 +1031,7 @@ const SidePanel = () => {
                     </div>
                   ) : (
                     <>
-                      <MessageList messages={messages} isDarkMode={isDarkMode} />
+                      <MessageList messages={messages} isDarkMode={isDarkMode} running={showStopButton} />
                       <div ref={messagesEndRef} />
                     </>
                   )}
