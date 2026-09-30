@@ -18,6 +18,7 @@ import { DEFAULT_AGENT_OPTIONS } from './agent/types';
 import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
+import { getSkillsSystemInstructions } from './services/skills';
 
 const logger = createLogger('background');
 
@@ -321,6 +322,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 
   const executor = new Executor(task, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
+    skillsInstructions: await getSkillsSystemInstructions(),
     agentOptions: {
       maxSteps: generalSettings.maxSteps,
       maxFailures: generalSettings.maxFailures,

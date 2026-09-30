@@ -33,6 +33,8 @@ export interface ExecutorExtraArgs {
   extractorLLM?: BaseChatModel;
   agentOptions?: Partial<AgentOptions>;
   generalSettings?: GeneralSettingsConfig;
+  /** System-prompt fragment built from enabled 'always' skills; appended to planner & navigator prompts. */
+  skillsInstructions?: string;
 }
 
 export class Executor {
@@ -65,8 +67,9 @@ export class Executor {
 
     this.generalSettings = extraArgs?.generalSettings;
     this.tasks.push(task);
-    this.navigatorPrompt = new NavigatorPrompt(context.options.maxActionsPerStep);
-    this.plannerPrompt = new PlannerPrompt();
+    const skillsInstructions = extraArgs?.skillsInstructions?.trim() ?? '';
+    this.navigatorPrompt = new NavigatorPrompt(context.options.maxActionsPerStep, skillsInstructions);
+    this.plannerPrompt = new PlannerPrompt(skillsInstructions);
 
     const actionBuilder = new ActionBuilder(context, extractorLLM);
     const navigatorActionRegistry = new NavigatorActionRegistry(actionBuilder.buildDefaultActions());

@@ -79,7 +79,7 @@ export const AnalyticsSettings: React.FC<AnalyticsSettingsProps> = ({ isDarkMode
       <div
         className={`rounded-lg border ${isDarkMode ? 'border-slate-700 bg-slate-800' : 'border-blue-100 bg-gray-50'} p-6 text-left shadow-sm`}>
         <h2 className={`mb-4 text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>
-          Analytics Settings
+          Analytics (disabled)
         </h2>
 
         <div className="space-y-6">
@@ -90,7 +90,7 @@ export const AnalyticsSettings: React.FC<AnalyticsSettingsProps> = ({ isDarkMode
               <label
                 htmlFor="analytics-enabled"
                 className={`text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>
-                Help improve Nanobrowser
+                Help improve Nanobrowser (telemetry removed in this build)
               </label>
               <div className="relative inline-block w-12 select-none">
                 <input
@@ -115,7 +115,8 @@ export const AnalyticsSettings: React.FC<AnalyticsSettingsProps> = ({ isDarkMode
               </div>
             </div>
             <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              Share anonymous usage data to help us improve the extension
+              Telemetry has been removed from this internal build — no data is collected or shared. The toggle is kept
+              only for compatibility.
             </p>
           </div>
 
