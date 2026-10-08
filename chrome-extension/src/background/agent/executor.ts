@@ -25,6 +25,7 @@ import { chatHistoryStore } from '@extension/storage/lib/chat';
 import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
+import type { ToolPolicy } from '../services/toolPolicy';
 
 const logger = createLogger('Executor');
 
@@ -35,6 +36,7 @@ export interface ExecutorExtraArgs {
   generalSettings?: GeneralSettingsConfig;
   /** System-prompt fragment built from enabled 'always' skills; appended to planner & navigator prompts. */
   skillsInstructions?: string;
+  toolPolicy?: ToolPolicy;
 }
 
 export class Executor {
@@ -63,6 +65,7 @@ export class Executor {
       messageManager,
       eventManager,
       extraArgs?.agentOptions ?? {},
+      extraArgs?.toolPolicy,
     );
 
     this.generalSettings = extraArgs?.generalSettings;
