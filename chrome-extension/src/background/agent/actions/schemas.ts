@@ -53,6 +53,18 @@ export const clickElementActionSchema: ActionSchema = {
   }),
 };
 
+export const fillFormActionSchema: ActionSchema = {
+  name: 'fill_form',
+  description: 'Fill multiple form fields as a draft and verify each value by rereading the page. Never submits the form.',
+  schema: z.object({
+    intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
+    fields: z.array(z.object({
+      index: z.number().int(),
+      value: z.string(),
+    })).min(1).max(50),
+  }),
+};
+
 export const inputTextActionSchema: ActionSchema = {
   name: 'input_text',
   description: 'Input text into an interactive input element',
