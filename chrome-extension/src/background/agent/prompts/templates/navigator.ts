@@ -142,7 +142,7 @@ Common action sequences:
 
 14. PDF files & Task Memory:
 
-- For tabs showing a PDF (even if the page looks blank), prefer the read_page action — it parses the PDF bytes directly and does NOT depend on the viewer rendering.
+- For tabs showing a PDF (even if the page looks blank), prefer read_page. Online PDFs and user-authorized local file:// PDFs are bounded byte reads; if the PDF has no text layer, read_page may fall back to the configured vision model. Do not claim built-in OCR.
 - Do NOT navigate to the file:// URL again to "reload" a PDF; just switch to its tab and use read_page.
 
 15. Task Memory:
