@@ -7,7 +7,7 @@ import type { EventManager } from './event/manager';
 import { type Actors, type ExecutionState, AgentEvent } from './event/types';
 import { AgentStepHistory } from './history';
 import type { ToolPolicy } from '../services/toolPolicy';
-import type { PendingAction, PendingWrite, PlanStep } from '@extension/storage';
+import { taskRunStore, type PendingAction, type PendingWrite, type PlanStep } from '@extension/storage';
 
 export interface AgentOptions {
   maxSteps: number;
@@ -92,6 +92,95 @@ export class AgentContext {
     this.toolPolicy = toolPolicy;
     this.plan = [];
     this.startedAt = Date.now();
+  }
+
+  async beginToolWrite(toolName: string, args: unknown, index?: number): Promise<PendingWrite | undefined> {
+    const sideEffectTools = new Set([
+      'click_element','input_text','select_dropdown_option','send_keys','fill_form',
+      'go_to_url','open_tab','close_tab','go_back','switch_tab','search_google',
+    ]);
+    if (!sideEffectTools.has(toolName)) return undefined;
+
+    let tabId: number | undefined;
+    let url: string | undefined;
+    try {
+      const page = await this.browserContext.getCurrentPage();
+      tabId = page.tabId;
+      url = page.url();
+    } catch {}
+
+    const argsObject = args && typeof args === 'object' ? args as Record<string, unknown> : {};
+    const expectedUrl = typeof argsObject.url === 'string'
+      ? argsObject.url
+      : undefined;
+    const expectedValue = typeof argsObject.text === 'string'
+      ? argsObject.text
+      : undefined;
+    const parameterSource = JSON.stringify(args ?? null);
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parameterSource));
+    const parameterHash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+    let expectedValueHash: string | undefined;
+    if (expectedValue !== undefined) {
+      const valueDigest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(expectedValue)));
+      expectedValueHash = Array.from(new Uint8Array(valueDigest)).map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    const pendingWrite: PendingWrite = {
+      toolName, parameterHash, tabId, url, expectedUrl,
+      startedAt: Date.now(), index, expectedValueHash,
+    };
+    this.pendingWrite = pendingWrite;
+
+    try {
+      const event = await taskRunStore.appendEvent(this.taskId, 'tool.requested', pendingWrite);
+      const checkpoint = await taskRunStore.getCheckpoint(this.taskId);
+      await taskRunStore.saveCheckpoint({
+        runId: this.taskId,
+        sequence: event.sequence,
+        plan: checkpoint?.plan ?? this.plan,
+        completedStepIds: checkpoint?.completedStepIds ?? this.plan.filter(step => step.status === 'completed').map(step => step.id),
+        memory: checkpoint?.memory ?? this.taskMemory.getFacts().map((content, i) => ({
+          id: this.taskId + ':memory:' + i,
+          content,
+          evidenceIds: [],
+          createdAt: Date.now(),
+        })),
+        evidenceIds: checkpoint?.evidenceIds ?? [],
+        activeTabId: tabId ?? checkpoint?.activeTabId,
+        navigatorState: checkpoint?.navigatorState,
+        pendingAction: checkpoint?.pendingAction,
+        approvedAction: checkpoint?.approvedAction,
+        pendingWrite,
+        pendingUserRequest: checkpoint?.pendingUserRequest,
+        pendingFileRead: checkpoint?.pendingFileRead,
+      });
+    } catch (error) {
+      this.paused = true;
+      throw new Error('无法持久化浏览器写操作检查点：' + (error instanceof Error ? error.message : String(error)));
+    }
+    return pendingWrite;
+  }
+
+  async finishToolWrite(result: ActionResult | undefined) {
+    if (!this.pendingWrite) return;
+    if (result?.error) {
+      this.taskMemory.add('浏览器写操作结果未知：' + result.error.slice(0, 180) + '。恢复前必须先核验后置条件。');
+      await taskRunStore.appendEvent(this.taskId, 'runtime.unknown_side_effect', {
+        toolName: this.pendingWrite.toolName,
+        parameterHash: this.pendingWrite.parameterHash,
+        error: result.error,
+      }).catch(() => undefined);
+      return;
+    }
+    const event = await taskRunStore.appendEvent(this.taskId, 'tool.completed', {
+      toolName: this.pendingWrite.toolName,
+      parameterHash: this.pendingWrite.parameterHash,
+    }).catch(() => undefined);
+    const checkpoint = await taskRunStore.getCheckpoint(this.taskId).catch(() => undefined);
+    if (event && checkpoint) {
+      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined }).catch(() => undefined);
+    }
+    this.pendingWrite = undefined;
   }
 
   async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {
