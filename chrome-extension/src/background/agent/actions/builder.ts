@@ -165,6 +165,17 @@ export class ActionBuilder {
     this.extractorLLM = extractorLLM;
   }
 
+  private async persistPdfEvidence(tabId: number, url: string, title: string, text: string, startPage: number) {
+    const re = /(?:^|\n)--- 第 (\d+) 页 ---\n([\s\S]*?)(?=\n--- 第 \d+ 页 ---\n|$)/g;
+    let match: RegExpExecArray | null;
+    let found = false;
+    while ((match = re.exec(text))) {
+      found = true;
+      await this.persistEvidence('pdf', tabId, url, title, match[2].trim(), Number(match[1]));
+    }
+    if (!found) await this.persistEvidence('pdf', tabId, url, title, text, startPage);
+  }
+
   private async persistEvidence(source:'dom'|'pdf'|'vision', tabId:number, url:string, title:string, content:string, pageNumber?:number){
     try {
       await taskRunStore.addEvidence({
@@ -531,7 +542,7 @@ export class ActionBuilder {
           }
           if (pdfResult.text) {
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
-            await this.persistEvidence('pdf', page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
+            await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
               extractedContent: formatPageEvidence(
