@@ -31,7 +31,7 @@ import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
 import { taskRunStore } from '@extension/storage';
 
-const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url']);
+const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url','go_back']);
 
 async function hashActionArgs(value: unknown) {
   const bytes = new TextEncoder().encode(JSON.stringify(value));
@@ -475,6 +475,10 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs ? String(actionArgs.url) : undefined;
           const expectedValue =
             actionArgs && typeof actionArgs === 'object' && 'text' in actionArgs ? String(actionArgs.text) : undefined;
+          const beforeObservationSignature =
+            actionName === 'send_keys' || actionName === 'go_back'
+              ? await currentPage.getObservationSignature()
+              : undefined;
           const pendingWrite = {
             toolName: actionName,
             parameterHash: actionParameterHash,
@@ -487,6 +491,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             startedAt: Date.now(),
             index: indexArg ?? undefined,
             expectedValueHash: expectedValue ? await hashActionArgs(expectedValue) : undefined,
+            beforeObservationSignature,
           };
           this.context.pendingWrite = pendingWrite;
           const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
