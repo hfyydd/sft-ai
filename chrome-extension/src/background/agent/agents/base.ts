@@ -204,8 +204,9 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
     logger.debug(`[${this.modelName}] Using manual JSON extraction fallback method`);
     const convertedInputMessages = convertInputMessages(inputMessages, this.modelName);
 
+    let response;
     try {
-      const response = await this.chatLLM.invoke(convertedInputMessages, {
+      response = await this.chatLLM.invoke(convertedInputMessages, {
         signal: this.context.controller.signal,
         ...this.callOptions,
       });
@@ -215,11 +216,21 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
         if (parsed) {
           return parsed;
         }
+        logger.error(
+          `[${this.modelName}] Manual parse failed. Raw model content (first 2000 chars):`,
+          String(response.content).slice(0, 2000),
+        );
+      } else {
+        logger.error(`[${this.modelName}] Manual path: non-string content:`, typeof response.content);
       }
     } catch (error) {
       logger.error(`[${this.modelName}] LLM call failed in manual extraction mode:`, error);
       throw error;
     }
+    logger.error(
+      `[${this.modelName}] raw content at failure:`,
+      JSON.stringify(response?.content ?? null).slice(0, 2000),
+    );
     const errorMessage = `Failed to parse response from ${this.modelName}`;
     logger.error(errorMessage);
     throw new ResponseParseError('Could not parse response');
@@ -257,6 +268,33 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
   // Helper method to manually parse the response content
   protected manuallyParseResponse(content: string): this['ModelOutput'] | undefined {
     const cleanedContent = removeThinkTags(content);
+
+    // DeepSeek V4 会以自有 DSML 标记格式输出工具调用(plain completion 模式):
+    // <｜｜DSML｜｜ invoke name="X"> <｜｜DSML｜｜ parameter name="K" ...>value
+    // 把各 parameter 段解析回对象,再走统一校验
+    if (cleanedContent.includes('DSML')) {
+      const obj: Record<string, unknown> = {};
+      const re = /<｜｜DSML｜｜ parameter name="([^"]+)"[^>]*>([\s\S]*?)(?=<｜｜DSML｜｜ |<\/｜｜DSML｜｜|$)/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(cleanedContent))) {
+        const name = m[1];
+        let rawVal = m[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
+        try {
+          obj[name] = JSON.parse(rawVal);
+        } catch {
+          obj[name] = rawVal;
+        }
+      }
+      if (Object.keys(obj).length > 0) {
+        logger.debug('DSML salvage parsed keys:', Object.keys(obj));
+        const validated = this.validateModelOutput(obj as this['ModelOutput']);
+        if (validated) {
+          logger.info('DSML salvage succeeded');
+          return validated;
+        }
+      }
+    }
+
     try {
       const extractedJson = extractJsonFromModelOutput(cleanedContent);
       return this.validateModelOutput(extractedJson);

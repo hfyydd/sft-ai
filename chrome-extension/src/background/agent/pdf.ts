@@ -1,6 +1,10 @@
-// 路线二(主路线):读取 PDF 文件字节,用 pdf.js 提取文本层(含 OCR 文本层)。
+// 路线二(主路线):读取 PDF 字节,用 pdf.js 提取文本层(含 OCR 文本层)。
 // 注意:pdf.js 在 MV3 Service Worker 顶层 import 可能引发崩溃,
-// 因此这里全部使用惰性动态加载 —— 只在真正读取 PDF 时才 import。
+// 因此这里使用惰性动态加载 —— 只在真正读取 PDF 时才 import。
+
+import { createLogger } from '../log';
+
+const logger = createLogger('PdfExtract');
 
 export interface PdfExtractResult {
   text: string;
@@ -9,16 +13,28 @@ export interface PdfExtractResult {
   truncated: boolean;
 }
 
+export interface PdfExtractOptions {
+  maxPages?: number;
+  maxChars?: number;
+  /** 中文 PDF 的 CID 字体需要 CMap 映射表;扩展内传 chrome.runtime.getURL('cmaps/') */
+  cMapUrl?: string;
+}
+
 let pdfjsPromise: Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> | null = null;
 
 async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
-      // pdf.js 的 fake worker 模式:主线程解析(MV3 SW 无法创建 Worker)
+      // pdf.js 的 fake worker 模式:主线程解析(MV3 SW 无法创建 Worker)。
+      // pdf.js 查找的是 globalThis.pdfjsWorker.WorkerMessageHandler,
+      // 必须显式提取该导出(模块命名空间对象在打包后不保证暴露它)
       const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
       // @ts-expect-error pdf.worker 无类型定义
-      const pdfjsWorker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
-      (globalThis as Record<string, unknown>).pdfjsWorker = pdfjsWorker;
+      const workerMod = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+      const handler =
+        (workerMod as Record<string, unknown>).WorkerMessageHandler ??
+        (workerMod as { default?: Record<string, unknown> }).default?.WorkerMessageHandler;
+      (globalThis as Record<string, unknown>).pdfjsWorker = { WorkerMessageHandler: handler };
       return pdfjsLib;
     })();
   }
@@ -26,23 +42,14 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.m
 }
 
 /**
- * 从 URL 下载 PDF 并提取文本层。
- * - fetch 走扩展 host_permissions,可跨域读取政务系统里的附件
+ * 从 PDF 字节提取文本层。
  * - 纯图片扫描件没有文本层,返回空文本(调用方可回退到截图+视觉模型)
  */
-export async function extractPdfTextFromUrl(
-  url: string,
-  options?: { maxPages?: number; maxChars?: number; cMapUrl?: string },
-): Promise<PdfExtractResult> {
+export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptions): Promise<PdfExtractResult> {
   const maxPages = options?.maxPages ?? 20;
   const maxChars = options?.maxChars ?? 30000;
+  const cMapUrl = options?.cMapUrl;
   const pdfjsLib = await loadPdfjs();
-
-  const res = await fetch(url, { credentials: 'include' });
-  if (!res.ok) {
-    throw new Error(`下载 PDF 失败:HTTP ${res.status}`);
-  }
-  const data = new Uint8Array(await res.arrayBuffer());
 
   const pdf = await pdfjsLib.getDocument({
     data,
@@ -50,10 +57,11 @@ export async function extractPdfTextFromUrl(
     useWorkerFetch: false,
     disableFontFace: true, // 只提取文本,不需要字体渲染
     // 中文 PDF 的 CID 字体需要 CMap 映射表才能解出 Unicode 文本
-    ...(options?.cMapUrl ? { cMapUrl: options.cMapUrl, cMapPacked: true } : {}),
+    ...(cMapUrl ? { cMapUrl, cMapPacked: true } : {}),
   }).promise;
 
   const numPages = pdf.numPages;
+  logger.info(`PDF opened: ${numPages} pages (cap ${maxPages})`);
   const pageCount = Math.min(numPages, maxPages);
   let text = '';
   let truncated = false;
@@ -69,6 +77,7 @@ export async function extractPdfTextFromUrl(
       }
     }
     pageText = pageText.trim();
+    logger.info(`page ${p}: ${pageText.length} chars`);
     if (pageText) {
       text += `\n--- 第 ${p} 页 ---\n${pageText}\n`;
     }
@@ -83,5 +92,20 @@ export async function extractPdfTextFromUrl(
     truncated = true;
   }
 
+  logger.info(`PDF extract done: ${text.trim().length} chars total`);
   return { text: text.trim(), numPages, extractedPages: pageCount, truncated };
+}
+
+/**
+ * 从 http(s)/file URL 读取 PDF 并提取文本层。
+ * - http(s):fetch 走扩展 host_permissions,可跨域读取政务系统附件
+ * - file:Service Worker 无法读 file://,由调用方先把字节读出来后传 extractPdfData
+ */
+export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOptions): Promise<PdfExtractResult> {
+  const res = await fetch(url, { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`下载 PDF 失败:HTTP ${res.status}`);
+  }
+  const data = new Uint8Array(await res.arrayBuffer());
+  return extractPdfData(data, options);
 }

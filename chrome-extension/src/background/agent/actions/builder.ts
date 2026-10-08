@@ -388,8 +388,88 @@ export class ActionBuilder {
       const intent = input.intent || t('act_readPage_start');
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
+      const page = await this.context.browserContext.getCurrentPage();
+      const tabInfo = await chrome.tabs.get(page.tabId);
+      const tabUrl = tabInfo.url || '';
+      let pdfExtractionFailed = false;
+      let pdfAttempted = false;
+
+      // 路线二(主路线):PDF → 读取字节 + pdf.js 提取文本层(含 OCR 文本层)。
+      // 不依赖 PDF 查看器的渲染状态:查看器显示错误页时同样可用
+      if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^https?:/i.test(tabUrl)) {
+        pdfAttempted = true;
+        const pdfMsg = t('act_readPage_pdf');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
+        try {
+          const pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/') });
+          if (pdfResult.text) {
+            const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
+            return new ActionResult({
+              extractedContent: okMsg + ':\n' + pdfResult.text,
+              includeInMemory: true,
+            });
+          }
+          pdfExtractionFailed = true; // 文本层为空(纯扫描件)→ 继续走截屏视觉
+          logger.info('PDF 无文本层(纯扫描件),回退到截图识别');
+        } catch (pdfError) {
+          logger.warning('PDF 文本层提取失败,回退到截图识别:', pdfError);
+          pdfExtractionFailed = true;
+        }
+      }
+
+      // 本地 file:// PDF:SW 无法读 file://,委托扩展页面(侧边栏)读取字节
+      if (/^file:/i.test(tabUrl) && /\.pdf(\?|#|$)/i.test(tabUrl)) {
+        pdfAttempted = true;
+        const pdfMsg = t('act_readPage_pdf');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
+        try {
+          const allowed = await chrome.extension.isAllowedFileSchemeAccess();
+          if (!allowed) {
+            const noPermMsg =
+              '读取本地 PDF 需要先开启文件访问权限:已为你打开扩展管理页,请找到 SFT AI 助手,打开「允许访问文件网址」开关后重试。';
+            chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, noPermMsg);
+            return new ActionResult({ extractedContent: noPermMsg, includeInMemory: true });
+          }
+          const fileBytes = await new Promise<{ ok: boolean; dataBase64?: string; error?: string }>(
+            (resolve, reject) => {
+              try {
+                chrome.runtime.sendMessage({ type: 'read_file_arraybuffer', path: tabUrl }, resp => {
+                  void chrome.runtime.lastError;
+                  resolve(resp || { ok: false, error: 'no responder(侧边栏未开启?)' });
+                });
+              } catch (e) {
+                reject(e);
+              }
+            },
+          );
+          if (!fileBytes.ok) {
+            throw new Error(fileBytes.error || '读取本地文件失败');
+          }
+          const binary = atob(fileBytes.dataBase64!);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const pdfResult = await extractPdfData(bytes, { cMapUrl: chrome.runtime.getURL('cmaps/') });
+          if (pdfResult.text) {
+            const okMsg = `已解析本地 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
+            return new ActionResult({
+              extractedContent: okMsg + ':\n' + pdfResult.text,
+              includeInMemory: true,
+            });
+          }
+          pdfExtractionFailed = true; // 无文本层(纯扫描件)→ 继续走截屏视觉
+          logger.info('本地 PDF 无文本层(纯扫描件),回退到截图识别');
+        } catch (pdfError) {
+          logger.warning('本地 PDF 文本层提取失败,回退到截图识别:', pdfError);
+          pdfExtractionFailed = true;
+        }
+      }
+
+      // 常规页面:注入脚本读取 DOM 文本(错误页等注入失败时 text 保持为空)
+      let text = '';
       try {
-        const page = await this.context.browserContext.getCurrentPage();
         const [result] = await chrome.scripting.executeScript({
           target: { tabId: page.tabId },
           func: (maxLen: number) => {
@@ -398,41 +478,17 @@ export class ActionBuilder {
           },
           args: [input.maxLength || 6000],
         });
-        let text = ((result?.result as string) || '').trim();
-        const tabInfo = await chrome.tabs.get(page.tabId);
-        const tabUrl = tabInfo.url || '';
-        let pdfExtractionFailed = false;
-        let pdfAttempted = false;
+        text = ((result?.result as string) || '').trim();
+      } catch (error) {
+        logger.warning('read_page: DOM 文本读取失败:', error);
+      }
 
-        // 路线二(主路线):PDF → 下载字节 + pdf.js 提取文本层(含 OCR 文本层)
-        if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^https?:/i.test(tabUrl)) {
-          pdfAttempted = true;
-          const pdfMsg = t('act_readPage_pdf');
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
-          try {
-            const pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/') });
-            if (pdfResult.text) {
-              const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
-              this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
-              return new ActionResult({
-                extractedContent: okMsg + ':\n' + pdfResult.text,
-                includeInMemory: true,
-              });
-            }
-            pdfExtractionFailed = true; // 文本层为空(纯扫描件)
-            logger.info('PDF 无文本层(纯扫描件),回退到截图识别');
-          } catch (pdfError) {
-            logger.warning('PDF 文本层提取失败,回退到截图识别:', pdfError);
-            pdfExtractionFailed = true;
-          }
-        }
-
-        // 页面没有 DOM 文本(纯扫描件 PDF 等)。兜底:截屏 + 视觉模型识别
-        if (!text) {
-          const visionMsg = t('act_readPage_vision');
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, visionMsg);
-          const tab = await chrome.tabs.get(page.tabId);
-          const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'jpeg', quality: 85 });
+      // 兜底:截屏 + 视觉模型识别
+      if (!text) {
+        const visionMsg = t('act_readPage_vision');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, visionMsg);
+        try {
+          const dataUrl = await chrome.tabs.captureVisibleTab(tabInfo.windowId, { format: 'jpeg', quality: 85 });
           const vision = await this.extractorLLM.invoke([
             new HumanMessage({
               content: [
@@ -445,35 +501,28 @@ export class ActionBuilder {
             }),
           ]);
           text = (typeof vision.content === 'string' ? vision.content : JSON.stringify(vision.content)).trim();
-          if (!text) {
-            // PDF 场景:文本层与截图识别都失败时,给确定性答复而不是让 agent 无限重试
-            if (pdfAttempted) {
-              const failMsg = `这是一个 PDF 文件(${tabUrl}),浏览器未能加载或无法提取其文本内容。请向用户说明该情况,并建议其确认文件可正常打开后重试,或提供文件所在系统的入口页面。`;
-              this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, failMsg);
-              return new ActionResult({ extractedContent: failMsg, includeInMemory: true });
-            }
-            const emptyMsg = t('act_readPage_empty');
-            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
-            return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
-          }
-          const okMsg = t('act_readPage_vision_ok');
-          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
-          return new ActionResult({
-            extractedContent: okMsg + ':\n' + text,
-            includeInMemory: true,
-          });
+        } catch (error) {
+          logger.warning('read_page 视觉识别失败:', error);
         }
-        const msg = t('act_readPage_ok') + '(' + text.length + ' 字符)';
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
+        if (!text) {
+          // PDF 场景:文本层与截图识别都失败时,给确定性答复而不是让 agent 无限重试
+          if (pdfAttempted) {
+            const failMsg = `这是一个 PDF 文件(${tabUrl}),浏览器未能加载或无法提取其文本内容。请向用户说明该情况,并建议其确认文件可正常打开后重试,或提供文件所在系统的入口页面。`;
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, failMsg);
+            return new ActionResult({ extractedContent: failMsg, includeInMemory: true });
+          }
+          const emptyMsg = t('act_readPage_empty');
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, emptyMsg);
+          return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
+        }
+        const okMsg = t('act_readPage_vision_ok');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
         return new ActionResult({
-          extractedContent: msg + ':\n' + text,
+          extractedContent: okMsg + ':\n' + text,
           includeInMemory: true,
         });
-      } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, t('act_readPage_fail') + errMsg);
-        return new ActionResult({ error: t('act_readPage_fail') + errMsg });
       }
+      return new ActionResult({ extractedContent: text, includeInMemory: true });
     }, readPageActionSchema);
     actions.push(readPage);
 

@@ -39,6 +39,42 @@ const SidePanel = () => {
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 响应后台的本地文件读取请求(file:// PDF 解析:SW 无法读 file://,由扩展页面代读)
+  useEffect(() => {
+    const listener = (
+      msg: { type?: string; path?: string },
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (resp: { ok: boolean; dataBase64?: string; error?: string }) => void,
+    ) => {
+      if (msg?.type !== 'read_file_arraybuffer' || !msg.path) return false;
+      try {
+        const xhr = new XMLHttpRequest();
+        xhr.open('GET', msg.path);
+        xhr.responseType = 'arraybuffer';
+        xhr.onload = () => {
+          if (xhr.status !== 200 && xhr.status !== 0) {
+            sendResponse({ ok: false, error: 'HTTP ' + xhr.status });
+            return;
+          }
+          const bytes = new Uint8Array(xhr.response);
+          let binary = '';
+          const chunkSize = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunkSize) {
+            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as unknown as number[]);
+          }
+          sendResponse({ ok: true, dataBase64: btoa(binary) });
+        };
+        xhr.onerror = () => sendResponse({ ok: false, error: '读取失败(可能未开启文件访问权限)' });
+        xhr.send();
+      } catch (e) {
+        sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+      return true; // 异步 sendResponse
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
   const setInputTextRef = useRef<((text: string) => void) | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
