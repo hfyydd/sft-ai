@@ -29,6 +29,7 @@ import { convertZodToJsonSchema, repairJsonString } from '@src/background/utils'
 import { HistoryTreeProcessor } from '@src/background/browser/dom/history/service';
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
+import { taskRunStore } from '@extension/storage';
 
 const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url']);
 
@@ -455,7 +456,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           this.context.pendingWrite = pendingWrite;
         }
 
-        const actionParameterHash = await this.hashActionArgs(actionArgs);
+        const actionParameterHash = await hashActionArgs(actionArgs);
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
           parameterHash: actionParameterHash,
