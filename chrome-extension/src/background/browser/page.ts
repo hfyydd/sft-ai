@@ -1109,6 +1109,15 @@ export default class Page {
     }
   }
 
+  async verifyDropdownSelection(index: number, expectedText: string): Promise<boolean> {
+    const selectorMap = this.getSelectorMap();
+    const element = selectorMap?.get(index);
+    if (!element) return false;
+    const handle = await this.locateElement(element);
+    if (!handle) return false;
+    return handle.evaluate((node, expected) => node instanceof HTMLSelectElement && node.selectedOptions.length > 0 && node.selectedOptions[0].text.trim() === expected, expectedText);
+  }
+
   async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
     const element = await this.locateElement(elementNode);
     if (!element) return false;
