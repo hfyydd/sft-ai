@@ -130,7 +130,10 @@ runController.configure(
   },
 );
 void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
-void taskRunStore.cleanupRetention().catch(error => logger.error('Failed to cleanup task runtime retention:', error));
+void generalSettingsStore
+  .getSettings()
+  .then(settings => taskRunStore.cleanupRetention(settings.taskRunMaxTerminalRuns, 2000, 200, settings.taskRunRetentionDays))
+  .catch(error => logger.error('Failed to cleanup task runtime retention:', error));
 
 // Initialize analytics
 analytics.init().catch(error => {
