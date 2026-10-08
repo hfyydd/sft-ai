@@ -120,7 +120,12 @@ const storage = createStorage<{ skills: Skill[] }>(
 export const skillStore: SkillStorage = {
   ...storage,
   async getSkills() {
-    return (await storage.get())?.skills ?? [];
+    const skills = (await storage.get())?.skills ?? [];
+    return skills.map(skill => ({
+      ...skill,
+      version: skill.version ?? 1,
+      allowedTools: skill.allowedTools ?? '*',
+    }));
   },
   async upsertSkill(skill) {
     const current = (await storage.get())?.skills ?? [];
@@ -145,6 +150,12 @@ export const skillStore: SkillStorage = {
     const existing = (await storage.get())?.skills ?? [];
     let count = 0;
     for (const item of incoming) {
+      if (item.version !== undefined && (!Number.isInteger(item.version) || item.version < 1)) {
+        throw new Error('Skill version must be a positive integer');
+      }
+      if (item.allowedTools !== '*' && Array.isArray(item.allowedTools) && item.allowedTools.some(tool => !tool || typeof tool !== 'string')) {
+        throw new Error('Skill allowedTools contains an invalid tool name');
+      }
       const match = existing.find(s => s.id === item.id || s.name === item.name);
       const skill = makeSkill({ ...item, id: match?.id ?? item.id });
       const idx = existing.findIndex(s => s.id === skill.id);
