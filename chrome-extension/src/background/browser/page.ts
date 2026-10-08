@@ -1186,10 +1186,13 @@ export default class Page {
           if (el instanceof HTMLElement) {
             el.textContent = '';
           }
-          if ('value' in el) {
-            (el as HTMLInputElement).value = '';
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, '');
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, '');
           }
-          // Dispatch events
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         });
@@ -1199,12 +1202,15 @@ export default class Page {
       } else {
         // Use direct value setting for other types of elements
         await element.evaluate((el, value) => {
-          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-            el.value = value;
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, value);
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, value);
           } else if (el instanceof HTMLElement && el.isContentEditable) {
             el.textContent = value;
           }
-          // Dispatch events
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }, text);
