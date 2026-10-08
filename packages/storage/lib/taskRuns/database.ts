@@ -1,7 +1,7 @@
 import type { TaskCheckpoint, TaskRun, TaskRunEvent } from './types';
 
 const DB_NAME = 'sft-ai-task-runs';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface TaskRunDatabase {
   runs: TaskRun;
@@ -30,6 +30,10 @@ export function openTaskRunDatabase(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('checkpoints')) {
         db.createObjectStore('checkpoints', { keyPath: 'runId' });
+      }
+      if (!db.objectStoreNames.contains('evidence')) {
+        const store = db.createObjectStore('evidence', { keyPath: 'id' });
+        store.createIndex('runId', 'runId', { unique: false });
       }
     };
     request.onsuccess = () => resolve(request.result);
