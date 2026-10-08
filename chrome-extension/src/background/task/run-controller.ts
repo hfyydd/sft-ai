@@ -157,6 +157,30 @@ export class RunController {
     }
   }
 
+  async handleTabClosed(tabId: number) {
+    const runId = this.activeRunId;
+    if (!runId) return;
+    const run = await taskRunStore.getRun(runId);
+    if (!run || run.activeTabId !== tabId || !ACTIVE.has(run.status)) return;
+    await taskRunStore.updateStatus(runId, 'interrupted');
+    await taskRunStore.appendEvent(runId, 'runtime.tab_closed', { tabId });
+    if (this.executor) await this.executor.pause().catch(() => undefined);
+  }
+
+  async handleDebuggerDetached(tabId: number, reason: string) {
+    const runId = this.activeRunId;
+    if (!runId) return;
+    const run = await taskRunStore.getRun(runId);
+    if (!run || run.activeTabId !== tabId || !ACTIVE.has(run.status)) return;
+    if (reason === 'canceled_by_user') {
+      await this.cancel();
+      return;
+    }
+    await taskRunStore.updateStatus(runId, 'interrupted');
+    await taskRunStore.appendEvent(runId, 'runtime.debugger_detached', { tabId, reason });
+    await this.executor?.pause().catch(() => undefined);
+  }
+
   async pause() {
     if (!this.executor || !this.activeRunId) throw new Error('No active task');
     await this.executor.pause();
