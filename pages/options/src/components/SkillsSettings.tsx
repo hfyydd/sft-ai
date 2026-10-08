@@ -149,8 +149,8 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>名称</label>
-                <input
+                <label htmlFor="skill-name" className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>名称</label>
+                <input id="skill-name"
                   className={inputCls}
                   value={editing.name}
                   onChange={e => setEditing({ ...editing, name: e.target.value })}
@@ -158,8 +158,8 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                 />
               </div>
               <div>
-                <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>模式</label>
-                <select
+                <label htmlFor="skill-mode" className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>模式</label>
+                <select id="skill-mode"
                   className={inputCls}
                   value={editing.mode}
                   onChange={e => setEditing({ ...editing, mode: e.target.value as SkillMode })}>
@@ -169,8 +169,8 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
               </div>
             </div>
             <div>
-              <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>描述</label>
-              <input
+              <label htmlFor="skill-description" className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>描述</label>
+              <input id="skill-description"
                 className={inputCls}
                 value={editing.description}
                 onChange={e => setEditing({ ...editing, description: e.target.value })}
@@ -178,10 +178,10 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
               />
             </div>
             <div>
-              <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <label htmlFor="skill-prompt" className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 提示词(注入到系统提示)
               </label>
-              <textarea
+              <textarea id="skill-prompt"
                 className={`${inputCls} min-h-[140px]`}
                 value={editing.prompt}
                 onChange={e => setEditing({ ...editing, prompt: e.target.value })}
@@ -189,10 +189,10 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
               />
             </div>
             <div>
-              <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+              <label htmlFor="skill-tools" className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 工具白名单(逗号分隔,留空 = 全部工具;高风险动作仍需单独审批)
               </label>
-              <input
+              <input id="skill-tools"
                 className={inputCls}
                 value={editing.allowedTools === '*' ? '' : editing.allowedTools.join(', ')}
                 onChange={e => {
