@@ -252,7 +252,18 @@ export class ActionBuilder {
       const intent = input.intent || t('act_searchGoogle_start', [input.query]);
       context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
-      await context.browserContext.navigateTo(`https://www.google.com/search?q=${input.query}`);
+      const currentPage = await context.browserContext.getCurrentPage();
+      const approved = await requestApproval({
+        runId: context.taskId,
+        toolName: 'search_google',
+        args: input,
+        tabId: currentPage.tabId,
+        url: currentPage.url(),
+        reason: '搜索会跨域导航到 Google',
+      });
+      if (!approved) return new ActionResult({ error: 'Cross-domain search was not approved', includeInMemory: true });
+
+      await context.browserContext.navigateTo(`https://www.google.com/search?q=${encodeURIComponent(input.query)}`);
 
       const msg2 = t('act_searchGoogle_ok', [input.query]);
       context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2);
