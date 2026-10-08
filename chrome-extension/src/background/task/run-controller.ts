@@ -219,11 +219,12 @@ export class RunController {
     }
   }
 
-  async pause() {
-    if (!this.executor || !this.activeRunId) throw new Error('No active task');
-    await this.executor.pause();
-    await taskRunStore.appendEvent(this.activeRunId, 'task.pause', { reason: 'user_command' });
-    await taskRunStore.updateStatus(this.activeRunId, 'paused');
+  async pause(runId?: string) {
+    const targetId = this.activeRunId ?? runId;
+    if (!targetId) throw new Error('No active task');
+    if (this.executor && this.activeRunId === targetId) await this.executor.pause();
+    await taskRunStore.appendEvent(targetId, 'task.pause', { reason: 'user_command' });
+    await taskRunStore.updateStatus(targetId, 'paused');
   }
 
   async resume(runId?: string) {
@@ -239,10 +240,13 @@ export class RunController {
     throw new Error('No recoverable task');
   }
 
-  async cancel() {
-    if (!this.executor || !this.activeRunId) throw new Error('No active task');
-    await this.executor.cancel();
-    await taskRunStore.updateStatus(this.activeRunId, 'cancelled').catch(() => undefined);
+  async cancel(runId?: string) {
+    const targetId = this.activeRunId ?? runId;
+    if (!targetId) throw new Error('No active task');
+    if (this.executor && this.activeRunId === targetId) await this.executor.cancel();
+    await taskRunStore.appendEvent(targetId, 'task.cancel', { reason: 'user_command' }).catch(() => undefined);
+    await taskRunStore.updateStatus(targetId, 'cancelled').catch(() => undefined);
+    if (this.activeRunId === targetId && !this.executor) await this.clearIfTerminal();
   }
 
   async recover(runId: string) {
