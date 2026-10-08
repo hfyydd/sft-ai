@@ -1685,4 +1685,799 @@ export default class Page {
       throw new URLNotAllowedError(errorMessage);
     }
   }
+}      // If CSS selector failed or was ambiguous, try XPath.
+      if (!elementHandle) {
+        const xpath = element.xpath;
+        if (xpath) {
+          try {
+            logger.info('Trying XPath selector:', xpath);
+            const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
+            const xpathCount = await currentFrame.evaluate(
+              expression => {
+                const result = document.evaluate(
+                  expression,
+                  document,
+                  null,
+                  XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                  null,
+                );
+                return result.snapshotLength;
+              },
+              fullXpath,
+            ).catch(() => 0);
+            if (xpathCount === 1) {
+              elementHandle = await currentFrame.$(`::-p-xpath(${fullXpath})`);
+            } else if (xpathCount > 1) {
+              logger.warning(`XPath matched ${xpathCount} elements`);
+            }
+          } catch (xpathError) {
+            logger.error('Failed to locate element using XPath:', xpathError);
+          }
+        }
+      }
+
+      if (!elementHandle) {
+        throw new Error('Dropdown element not found');
+      }
+
+      // Evaluate the select element to get all options
+      const options = await elementHandle.evaluate(select => {
+        if (!(select instanceof HTMLSelectElement)) {
+          throw new Error('Element is not a select element');
+        }
+
+        return Array.from(select.options).map(option => ({
+          index: option.index,
+          text: option.text, // Not trimming to maintain exact match for selection
+          value: option.value,
+        }));
+      });
+
+      if (!options.length) {
+        throw new Error('No options found in dropdown');
+      }
+
+      return options;
+    } catch (error) {
+      throw new Error(`Failed to get dropdown options: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  async selectDropdownOption(index: number, text: string): Promise<string> {
+    const selectorMap = this.getSelectorMap();
+    const element = selectorMap?.get(index);
+
+    if (!element || !this._puppeteerPage) {
+      throw new Error('Element not found or puppeteer is not connected');
+    }
+
+    logger.debug(`Attempting to select '${text}' from dropdown`);
+    logger.debug(`Element attributes: ${JSON.stringify(element.attributes)}`);
+    logger.debug(`Element tag: ${element.tagName}`);
+
+    // Validate that we're working with a select element
+    if (element.tagName?.toLowerCase() !== 'select') {
+      const msg = `Cannot select option: Element with index ${index} is a ${element.tagName}, not a SELECT`;
+      logger.error(msg);
+      throw new Error(msg);
+    }
+
+    try {
+      // Get the element handle using the element's selector
+      const elementHandle = await this.locateElement(element);
+      if (!elementHandle) {
+        throw new Error(`Dropdown element with index ${index} not found`);
+      }
+
+      // Verify dropdown and select option in one call
+      const result = await elementHandle.evaluate(
+        (select, optionText, elementIndex) => {
+          if (!(select instanceof HTMLSelectElement)) {
+            return {
+              found: false,
+              message: `Element with index ${elementIndex} is not a SELECT`,
+            };
+          }
+
+          const options = Array.from(select.options);
+          const option = options.find(opt => opt.text.trim() === optionText);
+
+          if (!option) {
+            const availableOptions = options.map(o => o.text.trim()).join('", "');
+            return {
+              found: false,
+              message: `Option "${optionText}" not found in dropdown element with index ${elementIndex}. Available options: "${availableOptions}"`,
+            };
+          }
+
+          // Set the value and dispatch events
+          const previousValue = select.value;
+          select.value = option.value;
+
+          // Only dispatch events if the value actually changed
+          if (previousValue !== option.value) {
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            select.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+
+          return {
+            found: true,
+            message: `Selected option "${optionText}" with value "${option.value}"`,
+          };
+        },
+        text,
+        index,
+      );
+
+      logger.debug('Selection result:', result);
+      // whether found or not, return the message
+      return result.message;
+    } catch (error) {
+      const errorMessage = `${error instanceof Error ? error.message : String(error)}`;
+      logger.error(errorMessage);
+      throw new Error(errorMessage);
+    }
+  }
+
+  async locateElement(element: DOMElementNode): Promise<ElementHandle | null> {
+    if (!this._puppeteerPage) {
+      // throw new Error('Puppeteer page is not connected');
+      logger.warning('Puppeteer is not connected');
+      return null;
+    }
+    let currentFrame: PuppeteerPage | Frame = this._puppeteerPage;
+
+    // Start with the target element and collect all parents
+    const parents: DOMElementNode[] = [];
+    let current = element;
+    while (current.parent) {
+      parents.push(current.parent);
+      current = current.parent;
+    }
+
+    // Process all iframe parents in sequence (in reverse order - top to bottom)
+    const iframes = parents.reverse().filter(item => item.tagName === 'iframe');
+    for (const parent of iframes) {
+      const cssSelector = parent.enhancedCssSelectorForElement(this._config.includeDynamicAttributes);
+      const frameElement: ElementHandle | null = await currentFrame.$(cssSelector);
+      if (!frameElement) {
+        // throw new Error(`Could not find iframe with selector: ${cssSelector}`);
+        logger.warning(`Could not find iframe with selector: ${cssSelector}`);
+        return null;
+      }
+      const frame: Frame | null = await frameElement.contentFrame();
+      if (!frame) {
+        // throw new Error(`Could not access frame content for selector: ${cssSelector}`);
+        logger.warning(`Could not access frame content for selector: ${cssSelector}`);
+        return null;
+      }
+      currentFrame = frame;
+      logger.info('currentFrame changed', currentFrame);
+    }
+
+    const cssSelector = element.enhancedCssSelectorForElement(this._config.includeDynamicAttributes);
+
+    try {
+      // Prefer an unambiguous CSS locator. If it is ambiguous, fall back to XPath.
+      const cssCount = await currentFrame.evaluate(
+        selector => document.querySelectorAll(selector).length,
+        cssSelector,
+      ).catch(() => 0);
+      let elementHandle: ElementHandle | null = cssCount === 1 ? await currentFrame.$(cssSelector) : null;
+      if (cssCount > 1) {
+        logger.warning(`Locator matched ${cssCount} elements; attempting XPath fallback`);
+      }
+
+      if (!elementHandle) {
+        const xpath = element.xpath;
+        if (xpath) {
+          try {
+            logger.info('Trying XPath selector:', xpath);
+            const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
+            const xpathSelector = `::-p-xpath(${fullXpath})`;
+            const xpathMatches = await currentFrame.$(xpathSelector);
+            if (xpathMatches.length === 1) elementHandle = xpathMatches[0];
+            else if (xpathMatches.length > 1) logger.warning(`XPath matched ${xpathMatches.length} elements`);
+          } catch (xpathError) {
+            logger.error('Failed to locate element using XPath:', xpathError);
+          }
+        }
+      }
+
+      // If element found, check visibility and scroll into view
+      if (elementHandle) {
+        const isHidden = await elementHandle.isHidden();
+        if (!isHidden) {
+          await this._scrollIntoViewIfNeeded(elementHandle);
+        }
+        return elementHandle;
+      }
+
+      logger.info('elementHandle not located');
+    } catch (error) {
+      logger.error('Failed to locate element:', error);
+    }
+
+    return null;
+  }
+
+  async verifyClickEffect(index: number, initialUrl: string): Promise<boolean> {
+    const currentUrl = this.url();
+    if (currentUrl !== initialUrl) return true;
+    try {
+      const state = await this.getState(false);
+      return !state.selectorMap.has(index);
+    } catch {
+      return false;
+    }
+  }
+
+  async verifyDropdownSelection(index: number, expectedText: string): Promise<boolean> {
+    const selectorMap = this.getSelectorMap();
+    const element = selectorMap?.get(index);
+    if (!element) return false;
+    const handle = await this.locateElement(element);
+    if (!handle) return false;
+    return handle.evaluate((node, expected) => node instanceof HTMLSelectElement && node.selectedOptions.length > 0 && node.selectedOptions[0].text.trim() === expected, expectedText);
+  }
+
+  async getInputValue(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => {
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return el.value;
+      if (el instanceof HTMLElement && el.isContentEditable) return el.textContent ?? '';
+      return null;
+    });
+  }
+
+  async getSelectedOptionText(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text?.trim() ?? null) : null);
+  }
+
+  async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
+    const element = await this.locateElement(elementNode);
+    if (!element) return false;
+    return element.evaluate((el, value) => {
+      const actual = 'value' in el ? String((el as HTMLInputElement).value ?? '') : (el.textContent ?? '');
+      return actual === value;
+    }, expected);
+  }
+
+  async inputTextElementNode(useVision: boolean, elementNode: DOMElementNode, text: string): Promise<void> {
+    if (!this._puppeteerPage) {
+      throw new Error('Puppeteer is not connected');
+    }
+
+    try {
+      // Highlight before typing
+      // if (elementNode.highlightIndex != null) {
+      //   await this._updateState(useVision, elementNode.highlightIndex);
+      // }
+
+      const element = await this.locateElement(elementNode);
+      if (!element) {
+        throw new Error(`Element: ${elementNode} not found`);
+      }
+
+      // Ensure element is ready for input
+      try {
+        // First wait for element stability
+        await this._waitForElementStability(element, 1500);
+
+        // Then check visibility and scroll into view if needed
+        const isHidden = await element.isHidden();
+        if (!isHidden) {
+          await this._scrollIntoViewIfNeeded(element, 1500);
+        }
+      } catch (e) {
+        // Continue even if these operations fail
+        logger.debug(`Non-critical error preparing element: ${e}`);
+      }
+
+      // Get element properties to determine input method
+      const tagName = await element.evaluate(el => el.tagName.toLowerCase());
+      const isContentEditable = await element.evaluate(el => {
+        if (el instanceof HTMLElement) {
+          return el.isContentEditable;
+        }
+        return false;
+      });
+      const isReadOnly = await element.evaluate(el => {
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          return el.readOnly;
+        }
+        return false;
+      });
+      const isDisabled = await element.evaluate(el => {
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+          return el.disabled;
+        }
+        return false;
+      });
+
+      // Choose appropriate input method based on element properties
+      if ((isContentEditable || tagName === 'input') && !isReadOnly && !isDisabled) {
+        // Clear content and set value directly
+        await element.evaluate(el => {
+          if (el instanceof HTMLElement) {
+            el.textContent = '';
+          }
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, '');
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, '');
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+
+        // Type the text with a small delay between keypresses
+        await element.type(text, { delay: 50 });
+      } else {
+        // Use direct value setting for other types of elements
+        await element.evaluate((el, value) => {
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, value);
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, value);
+          } else if (el instanceof HTMLElement && el.isContentEditable) {
+            el.textContent = value;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, text);
+      }
+
+      // Wait for page stability after input
+      await this.waitForPageAndFramesLoad();
+    } catch (error) {
+      const errorMsg = `Failed to input text into element: ${elementNode}. Error: ${error instanceof Error ? error.message : String(error)}`;
+      logger.error(errorMsg);
+      throw new Error(errorMsg);
+    }
+  }
+
+  /**
+   * Wait for an element to become stable (no position/size changes)
+   * Similar to Playwright's wait_for_element_state('stable')
+   */
+  private async _waitForElementStability(element: ElementHandle, timeout = 1000): Promise<void> {
+    const startTime = Date.now();
+    let lastRect = await element.boundingBox();
+
+    while (Date.now() - startTime < timeout) {
+      // Wait a short time
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Get current position and size
+      const currentRect = await element.boundingBox();
+
+      // If element is no longer in DOM or not visible
+      if (!currentRect) {
+        break;
+      }
+
+      // Compare with previous position/size
+      if (
+        lastRect &&
+        Math.abs(lastRect.x - currentRect.x) < 2 &&
+        Math.abs(lastRect.y - currentRect.y) < 2 &&
+        Math.abs(lastRect.width - currentRect.width) < 2 &&
+        Math.abs(lastRect.height - currentRect.height) < 2
+      ) {
+        // Position is stable - wait a bit more to be sure and then return
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return;
+      }
+
+      // Update last position
+      lastRect = currentRect;
+    }
+
+    // If we got here, either the element stabilized or we timed out
+    logger.debug('Element stability check completed (timeout or stable)');
+  }
+
+  private async _scrollIntoViewIfNeeded(element: ElementHandle, timeout = 1000): Promise<void> {
+    const startTime = Date.now();
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      // Check if element is in viewport
+      const isVisible = await element.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+
+        // Check if element has size
+        if (rect.width === 0 || rect.height === 0) return false;
+
+        // Check if element is hidden
+        const style = window.getComputedStyle(el);
+        if (style.visibility === 'hidden' || style.display === 'none' || style.opacity === '0') {
+          return false;
+        }
+
+        // Check if element is in viewport
+        const isInViewport =
+          rect.top >= 0 &&
+          rect.left >= 0 &&
+          rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+          rect.right <= (window.innerWidth || document.documentElement.clientWidth);
+
+        if (!isInViewport) {
+          // Scroll into view if not visible
+          el.scrollIntoView({
+            behavior: 'auto',
+            block: 'center',
+            inline: 'center',
+          });
+          return false;
+        }
+
+        return true;
+      });
+
+      if (isVisible) break;
+
+      // Check timeout - log warning and return instead of throwing
+      if (Date.now() - startTime > timeout) {
+        logger.warning('Timed out while trying to scroll element into view, continuing anyway');
+        break;
+      }
+
+      // Small delay before next check
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+
+  async clickElementNode(useVision: boolean, elementNode: DOMElementNode): Promise<void> {
+    if (!this._puppeteerPage) {
+      throw new Error('Puppeteer is not connected');
+    }
+
+    try {
+      // Highlight before clicking
+      // if (elementNode.highlightIndex !== null) {
+      //   await this._updateState(useVision, elementNode.highlightIndex);
+      // }
+
+      const element = await this.locateElement(elementNode);
+      if (!element) {
+        throw new Error(`Element: ${elementNode} not found`);
+      }
+
+      // Scroll element into view if needed
+      await this._scrollIntoViewIfNeeded(element);
+
+      try {
+        // First attempt: Use Puppeteer's click method with timeout
+        await Promise.race([
+          element.click(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Click timeout')), 2000)),
+        ]);
+        await this._checkAndHandleNavigation();
+      } catch (error) {
+        // if URLNotAllowedError, throw it
+        if (error instanceof URLNotAllowedError) {
+          throw error;
+        }
+        // Second attempt: Use evaluate to perform a direct click
+        logger.info('Failed to click element, trying again', error);
+        try {
+          await element.evaluate(el => (el as HTMLElement).click());
+          await this._checkAndHandleNavigation();
+        } catch (secondError) {
+          // if URLNotAllowedError, throw it
+          if (secondError instanceof URLNotAllowedError) {
+            throw secondError;
+          }
+          throw new Error(
+            `Failed to click element: ${secondError instanceof Error ? secondError.message : String(secondError)}`,
+          );
+        }
+      }
+    } catch (error) {
+      throw new Error(
+        `Failed to click element: ${elementNode}. Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  getSelectorMap(): Map<number, DOMElementNode> {
+    // If there is no cached state, return an empty map
+    if (this._cachedState === null) {
+      return new Map();
+    }
+    // Otherwise return the cached state's selector map
+    return this._cachedState.selectorMap;
+  }
+
+  async getElementByIndex(index: number): Promise<ElementHandle | null> {
+    const selectorMap = this.getSelectorMap();
+    const element = selectorMap.get(index);
+    if (!element) return null;
+    return await this.locateElement(element);
+  }
+
+  getDomElementByIndex(index: number): DOMElementNode | null {
+    const selectorMap = this.getSelectorMap();
+    return selectorMap.get(index) || null;
+  }
+
+  isFileUploader(elementNode: DOMElementNode, maxDepth = 3, currentDepth = 0): boolean {
+    if (currentDepth > maxDepth) {
+      return false;
+    }
+
+    // Check current element
+    if (elementNode.tagName === 'input') {
+      // Check for file input attributes
+      const attributes = elementNode.attributes;
+      // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+      if (attributes['type']?.toLowerCase() === 'file' || !!attributes['accept']) {
+        return true;
+      }
+    }
+
+    // Recursively check children
+    if (elementNode.children && currentDepth < maxDepth) {
+      for (const child of elementNode.children) {
+        if ('tagName' in child) {
+          // DOMElementNode type guard
+          if (this.isFileUploader(child as DOMElementNode, maxDepth, currentDepth + 1)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  async waitForPageLoadState(timeout?: number) {
+    const timeoutValue = timeout || 8000;
+    await this._puppeteerPage?.waitForNavigation({ timeout: timeoutValue });
+  }
+
+  private async _waitForStableNetwork() {
+    if (!this._puppeteerPage) {
+      throw new Error('Puppeteer page is not connected');
+    }
+
+    const RELEVANT_RESOURCE_TYPES = new Set(['document', 'stylesheet', 'image', 'font', 'script', 'iframe']);
+
+    const RELEVANT_CONTENT_TYPES = new Set([
+      'text/html',
+      'text/css',
+      'application/javascript',
+      'image/',
+      'font/',
+      'application/json',
+    ]);
+
+    const IGNORED_URL_PATTERNS = new Set([
+      // Analytics and tracking
+      'analytics',
+      'tracking',
+      'telemetry',
+      'beacon',
+      'metrics',
+      // Ad-related
+      'doubleclick',
+      'adsystem',
+      'adserver',
+      'advertising',
+      // Social media widgets
+      'facebook.com/plugins',
+      'platform.twitter',
+      'linkedin.com/embed',
+      // Live chat and support
+      'livechat',
+      'zendesk',
+      'intercom',
+      'crisp.chat',
+      'hotjar',
+      // Push notifications
+      'push-notifications',
+      'onesignal',
+      'pushwoosh',
+      // Background sync/heartbeat
+      'heartbeat',
+      'ping',
+      'alive',
+      // WebRTC and streaming
+      'webrtc',
+      'rtmp://',
+      'wss://',
+      // Common CDNs
+      'cloudfront.net',
+      'fastly.net',
+    ]);
+
+    const pendingRequests = new Set();
+    let lastActivity = Date.now();
+
+    const onRequest = (request: HTTPRequest) => {
+      // Filter by resource type
+      const resourceType = request.resourceType();
+      if (!RELEVANT_RESOURCE_TYPES.has(resourceType)) {
+        return;
+      }
+
+      // Filter out streaming, websocket, and other real-time requests
+      if (['websocket', 'media', 'eventsource', 'manifest', 'other'].includes(resourceType)) {
+        return;
+      }
+
+      // Filter out by URL patterns
+      const url = request.url().toLowerCase();
+      if (Array.from(IGNORED_URL_PATTERNS).some(pattern => url.includes(pattern))) {
+        return;
+      }
+
+      // Filter out data URLs and blob URLs
+      if (url.startsWith('data:') || url.startsWith('blob:')) {
+        return;
+      }
+
+      // Filter out requests with certain headers
+      const headers = request.headers();
+      if (
+        // biome-ignore lint/complexity/useLiteralKeys: <explanation>
+        headers['purpose'] === 'prefetch' ||
+        headers['sec-fetch-dest'] === 'video' ||
+        headers['sec-fetch-dest'] === 'audio'
+      ) {
+        return;
+      }
+
+      pendingRequests.add(request);
+      lastActivity = Date.now();
+    };
+
+    const onResponse = (response: HTTPResponse) => {
+      const request = response.request();
+      if (!pendingRequests.has(request)) {
+        return;
+      }
+
+      // Filter by content type
+      const contentType = response.headers()['content-type']?.toLowerCase() || '';
+
+      // Skip streaming content
+      if (
+        ['streaming', 'video', 'audio', 'webm', 'mp4', 'event-stream', 'websocket', 'protobuf'].some(t =>
+          contentType.includes(t),
+        )
+      ) {
+        pendingRequests.delete(request);
+        return;
+      }
+
+      // Only process relevant content types
+      if (!Array.from(RELEVANT_CONTENT_TYPES).some(ct => contentType.includes(ct))) {
+        pendingRequests.delete(request);
+        return;
+      }
+
+      // Skip large responses
+      const contentLength = response.headers()['content-length'];
+      if (contentLength && Number.parseInt(contentLength) > 5 * 1024 * 1024) {
+        // 5MB
+        pendingRequests.delete(request);
+        return;
+      }
+
+      pendingRequests.delete(request);
+      lastActivity = Date.now();
+    };
+
+    // Add event listeners
+    this._puppeteerPage.on('request', onRequest);
+    this._puppeteerPage.on('response', onResponse);
+
+    try {
+      const startTime = Date.now();
+
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        const now = Date.now();
+        const timeSinceLastActivity = (now - lastActivity) / 1000; // Convert to seconds
+
+        if (pendingRequests.size === 0 && timeSinceLastActivity >= this._config.waitForNetworkIdlePageLoadTime) {
+          break;
+        }
+
+        const elapsedTime = (now - startTime) / 1000; // Convert to seconds
+        if (elapsedTime > this._config.maximumWaitPageLoadTime) {
+          console.debug(
+            `Network timeout after ${this._config.maximumWaitPageLoadTime}s with ${pendingRequests.size} pending requests:`,
+            Array.from(pendingRequests).map(r => (r as HTTPRequest).url()),
+          );
+          break;
+        }
+      }
+    } finally {
+      // Clean up event listeners
+      this._puppeteerPage.off('request', onRequest);
+      this._puppeteerPage.off('response', onResponse);
+    }
+    console.debug(`Network stabilized for ${this._config.waitForNetworkIdlePageLoadTime} seconds`);
+  }
+
+  async waitForPageAndFramesLoad(timeoutOverwrite?: number): Promise<void> {
+    // Start timing
+    const startTime = Date.now();
+
+    // Wait for page load
+    try {
+      await this._waitForStableNetwork();
+
+      // Check if the loaded URL is allowed
+      if (this._puppeteerPage) {
+        await this._checkAndHandleNavigation();
+      }
+    } catch (error) {
+      if (error instanceof URLNotAllowedError) {
+        throw error;
+      }
+      console.warn('Page load failed, continuing...', error);
+    }
+
+    // Calculate remaining time to meet minimum wait time
+    const elapsed = (Date.now() - startTime) / 1000; // Convert to seconds
+    const minWaitTime = timeoutOverwrite || this._config.minimumWaitPageLoadTime;
+    const remaining = Math.max(minWaitTime - elapsed, 0);
+
+    console.debug(
+      `--Page loaded in ${elapsed.toFixed(2)} seconds, waiting for additional ${remaining.toFixed(2)} seconds`,
+    );
+
+    // Sleep remaining time if needed
+    if (remaining > 0) {
+      await new Promise(resolve => setTimeout(resolve, remaining * 1000)); // Convert seconds to milliseconds
+    }
+  }
+
+  /**
+   * Check the current page URL and handle if it's not allowed
+   * @throws URLNotAllowedError if the current URL is not allowed
+   */
+  private async _checkAndHandleNavigation(): Promise<void> {
+    if (!this._puppeteerPage) {
+      return;
+    }
+
+    const currentUrl = this._puppeteerPage.url();
+    if (!isUrlAllowed(currentUrl, this._config.allowedUrls, this._config.deniedUrls)) {
+      const errorMessage = `URL: ${currentUrl} is not allowed`;
+      logger.error(errorMessage);
+
+      // Navigate to home page or about:blank
+      const safeUrl = this._config.homePageUrl || 'about:blank';
+      logger.info(`Redirecting to safe URL: ${safeUrl}`);
+
+      try {
+        await this._puppeteerPage.goto(safeUrl);
+      } catch (error) {
+        logger.error(`Failed to redirect to safe URL: ${error instanceof Error ? error.message : String(error)}`);
+      }
+
+      throw new URLNotAllowedError(errorMessage);
+    }
+  }
 }
