@@ -39,6 +39,7 @@ export interface TaskRun {
   updatedAt: number;
   activeTabId?: number;
   checkpointVersion: number;
+  skillIds: string[];
 }
 
 export interface TaskRunEvent {
