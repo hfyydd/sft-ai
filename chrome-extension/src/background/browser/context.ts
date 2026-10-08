@@ -238,7 +238,8 @@ export default class BrowserContext {
     await this.waitForTabEvents(tabId, { waitForUpdate: false });
 
     const page = await this._getOrCreatePage(await chrome.tabs.get(tabId));
-    await this.attachPage(page);
+    const attached = await this.attachPage(page);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tabId;
     return page;
   }
@@ -272,7 +273,8 @@ export default class BrowserContext {
 
     // Reattach the page after navigation completes
     const updatedPage = await this._getOrCreatePage(finalTab, true);
-    await this.attachPage(updatedPage);
+    const attached = await this.attachPage(updatedPage);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tabId;
   }
 
@@ -293,7 +295,8 @@ export default class BrowserContext {
     const updatedTab = await this.assertTabUrlAllowed(tab.id);
     // Create and attach the page after tab is fully loaded and activated
     const page = await this._getOrCreatePage(updatedTab);
-    await this.attachPage(page);
+    const attached = await this.attachPage(page);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tab.id;
 
     return page;
