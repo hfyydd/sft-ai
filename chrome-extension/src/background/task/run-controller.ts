@@ -1,6 +1,7 @@
 import { taskRunStore, type PendingWrite, type TaskRun, type TaskRunStatus } from '@extension/storage';
 import type { Executor } from '../agent/executor';
 import type { AgentEvent } from '../agent/event/types';
+import { classifyFailure } from '../agent/recovery';
 
 const TERMINAL = new Set<TaskRunStatus>(['completed', 'failed', 'cancelled']);
 const ACTIVE = new Set<TaskRunStatus>(['queued', 'running', 'waiting_approval', 'waiting_user', 'paused', 'interrupted']);
@@ -127,12 +128,20 @@ export class RunController {
 
     const snapshot = this.executor?.getRuntimeSnapshot();
     if (snapshot && nextStatus && TERMINAL.has(nextStatus)) {
+      const events = await taskRunStore.getEvents(run.id, 0, 5000).catch(() => []);
+      const lastFailure = [...events].reverse().find(item => item.type === 'task.fail' || item.type === 'step.fail');
+      const failureText = lastFailure?.payload && typeof lastFailure.payload === 'object' && 'data' in lastFailure.payload
+        ? String(((lastFailure.payload as { data?: { details?: unknown } }).data?.details ?? ''))
+        : '';
       await taskRunStore.appendEvent(run.id, 'runtime.metrics', {
         durationMs: snapshot.durationMs,
         estimatedInputTokens: snapshot.estimatedInputTokens,
         steps: snapshot.step,
         navigator: snapshot.navigator,
         planner: snapshot.planner,
+        userInterventions: events.filter(item => item.type === 'user.requested').length,
+        approvals: events.filter(item => item.type === 'approval.approved').length,
+        failureClass: failureText ? classifyFailure(new Error(failureText)) : undefined,
       }).catch(() => undefined);
     }
     if (snapshot && !(nextStatus && TERMINAL.has(nextStatus))) {
