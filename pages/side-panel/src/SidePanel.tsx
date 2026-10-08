@@ -48,6 +48,7 @@ const SidePanel = () => {
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastRunSequenceRef = useRef(0);
 
   // 响应后台的本地文件读取请求(file:// PDF 解析:SW 无法读 file://,由扩展页面代读)
   useEffect(() => {
@@ -378,7 +379,16 @@ const SidePanel = () => {
           handleTaskState(message);
         } else if (message && message.type === 'run_snapshot') {
           setRunSnapshot(message.snapshot);
+          const snapshotEvents = message.snapshot?.events || [];
+          lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
           if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
+        } else if (message && message.type === 'run_event') {
+          const event = message.event;
+          if (event?.runId === sessionIdRef.current && event.sequence > lastRunSequenceRef.current) {
+            lastRunSequenceRef.current = event.sequence;
+            setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), event].slice(-500) } : prev);
+          }
+          if (event) handleTaskState(event);
         } else if (message && message.type === 'approval_required') {
           setApprovalAction(message.action);
         } else if (message && message.type === 'run_evidence') {
