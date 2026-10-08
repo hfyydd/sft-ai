@@ -169,12 +169,16 @@ export class TaskRunStore {
     for (const run of runs) await this.removeRun(run.id);
   }
 
-  async cleanupRetention(maxTerminalRuns = 30, maxEventsPerRun = 2000, maxEvidencePerRun = 200) {
+  async cleanupRetention(maxTerminalRuns = 30, maxEventsPerRun = 2000, maxEvidencePerRun = 200, retentionDays = 30) {
     const db=await openTaskRunDatabase();
     const terminal=new Set<TaskRunStatus>(['completed','failed','cancelled']);
     const runs=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if(terminal.has((cur.value as TaskRun).status))a.push(normalizeRun(cur.value)!);cur.continue();};q.onerror=()=>reject(q.error);});
     db.close();
     runs.sort((a,b)=>b.updatedAt-a.updatedAt);
+    const cutoff = Date.now() - Math.max(1, retentionDays) * 24 * 60 * 60 * 1000;
+    for(const run of runs) {
+      if (run.updatedAt < cutoff) await this.removeRun(run.id);
+    }
     for(const run of runs.slice(maxTerminalRuns)) await this.removeRun(run.id);
     for(const run of runs.slice(0,maxTerminalRuns)){
       await this.trimEvents(run.id,maxEventsPerRun);
