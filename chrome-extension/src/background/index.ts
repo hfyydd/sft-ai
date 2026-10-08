@@ -57,7 +57,9 @@ chrome.debugger.onDetach.addListener(async (source, reason) => {
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener(tabId => {
   browserContext.removeAttachedPage(tabId);
-  void runController.handleTabClosed(tabId);
+  void runController.handleTabClosed(tabId).finally(() => {
+    currentExecutor = runController.getExecutor();
+  });
 });
 
 logger.info('background loaded');
