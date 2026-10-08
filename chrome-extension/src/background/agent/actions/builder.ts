@@ -531,10 +531,11 @@ export class ActionBuilder {
           let pdfResult;
           if (tabUrl.startsWith('file://')) {
             const requestId = crypto.randomUUID();
-            const response = await new Promise<{ok:boolean;dataBase64?:string;error?:string}>((resolve,reject)=>{
+            const response = await new Promise<{ok:boolean;requestId?:string;dataBase64?:string;error?:string}>((resolve,reject)=>{
               const timer=setTimeout(()=>reject(new Error('读取本地 PDF 超时，请保持侧边栏打开并确认扩展已开启“允许访问文件网址”。')),15000);
               chrome.runtime.sendMessage({type:'read_file_arraybuffer',path:tabUrl,requestId},result=>{clearTimeout(timer);if(chrome.runtime.lastError)reject(new Error(chrome.runtime.lastError.message));else resolve(result);});
             });
+            if(response?.requestId !== requestId) throw new Error('本地 PDF 读取响应与请求 ID 不匹配');
             if(!response?.ok||!response.dataBase64) throw new Error(response?.error||'本地 PDF 读取失败，请检查文件访问权限');
             pdfResult=await extractPdfTextFromBytes(decodeBase64ToBytes(response.dataBase64),{cMapUrl:chrome.runtime.getURL('cmaps/'),maxPages:input.pageCount??20,maxChars:Math.min(input.maxLength??6000,30000),startPage:input.pageStart??1});
           } else {
