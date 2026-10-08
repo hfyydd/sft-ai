@@ -36,6 +36,7 @@ export interface PendingAction {
   argsSummary: string;
   tabId?: number;
   url?: string;
+  targetUrl?: string;
   expiresAt: number;
   nonce: string;
   parameterHash: string;
