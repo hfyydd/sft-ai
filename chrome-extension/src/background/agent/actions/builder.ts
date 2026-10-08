@@ -293,7 +293,7 @@ export class ActionBuilder {
       if (crossDomain) {
         const approved = await requestApproval({
           runId: this.context.taskId, toolName: 'go_to_url', args: input,
-          tabId: currentPage.tabId, url: currentUrl, reason: '跨域导航需要确认',
+          tabId: currentPage.tabId, url: currentUrl, targetUrl: input.url, reason: '跨域导航需要确认',
         });
         if (!approved) return new ActionResult({ error: 'Cross-domain navigation was not approved', includeInMemory: true });
       }
@@ -407,6 +407,7 @@ export class ActionBuilder {
 
             tabId: page.tabId,
             url: page.url(),
+            targetUrl: linkedUrl || undefined,
             reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : intent || elementText,
           });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
@@ -512,7 +513,7 @@ export class ActionBuilder {
       const currentPage = await this.context.browserContext.getCurrentPage();
       const approved = await requestApproval({
         runId: this.context.taskId, toolName: 'open_tab', args: input,
-        tabId: currentPage.tabId, url: currentPage.url(), reason: '打开新标签页',
+        tabId: currentPage.tabId, url: currentPage.url(), targetUrl: input.url, reason: '打开新标签页',
       });
       if (!approved) return new ActionResult({ error: 'Opening a new tab was not approved', includeInMemory: true });
       await this.context.browserContext.openTab(input.url);
