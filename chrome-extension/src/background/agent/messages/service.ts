@@ -268,6 +268,10 @@ export default class MessageManager {
     if (this.history.totalTokens > budget) this.cutMessages();
   }
 
+  public getEstimatedTokenCount(): number {
+    return this.history.getTotalTokens();
+  }
+
   public getMessages(): BaseMessage[] {
     this.compactHistoryIfNeeded();
     const messages = this.history.messages
