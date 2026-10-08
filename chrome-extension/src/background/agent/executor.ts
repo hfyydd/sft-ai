@@ -313,36 +313,31 @@ export class Executor {
   private async navigate(): Promise<boolean> {
     const context = this.context;
     try {
-      // Get and execute navigation action
-      // check if the task is paused or stopped
-      if (context.paused || context.stopped) {
-        return false;
-      }
+      if (context.paused || context.stopped) return false;
+
       const navOutput = await this.navigator.execute();
-      // check if the task is paused or stopped
-      if (context.paused || context.stopped) {
-        return false;
-      }
+
+      if (context.paused || context.stopped) return false;
+
       context.nSteps++;
-      if (navOutput.error) {
-        throw new Error(navOutput.error);
-      }
+      if (navOutput.error) throw new Error(navOutput.error);
       context.consecutiveFailures = 0;
-      // Agent Loop v2: 动作级失败写入工作记忆,供下一轮规划反思
-      for (const r of context.actionResults) {
-        if (r.error) {
-          if (context.plan.some(step => step.status === 'running')) context.plan = advancePlan(context.plan, false);
-      const failureClass = classifyFailure(error);
-      context.taskMemory.add('失败分类:' + failureClass + '。恢复策略:' + recoveryAdvice(failureClass) + '。');
-      context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
+
+      for (const result of context.actionResults) {
+        if (result.error) {
+          context.taskMemory.add(
+            `动作执行出错:${String(result.error).slice(0, 150)}。后续避免重复同样的失败。`,
+          );
         }
       }
+
       if (navOutput.result?.done) {
         this.context.plan = advancePlan(this.context.plan, true);
         return true;
       }
     } catch (error) {
       logger.error(`Failed to execute step: ${error}`);
+
       if (
         error instanceof ChatModelAuthError ||
         error instanceof ChatModelBadRequestError ||
@@ -352,20 +347,26 @@ export class Executor {
       ) {
         throw error;
       }
+
+      const failureClass = classifyFailure(error);
+      context.taskMemory.add(
+        `失败分类:${failureClass}。恢复策略:${recoveryAdvice(failureClass)}。`,
+      );
+      if (context.plan.some(step => step.status === 'running')) {
+        context.plan = advancePlan(context.plan, false);
+      }
+
       if (error instanceof URLNotAllowedError) {
-        // 被安全策略阻止的 URL(如 chrome:// 页)是可恢复失败:告知模型换目标,任务继续
         context.taskMemory.add(
           `目标 URL 被安全策略阻止(${String(error.message).slice(0, 120)})。chrome:// 等浏览器内部页面无法访问,请改用普通 http(s) 页面。`,
         );
-        context.consecutiveFailures++;
-        logger.warning('Step failed with URLNotAllowedError (recoverable):', error.message);
-        return false;
+      } else {
+        context.taskMemory.add(
+          `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,
+        );
       }
-      context.taskMemory.add(
-        `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,
-      );
+
       context.consecutiveFailures++;
-      logger.error(`Failed to execute step: ${error}`);
       if (context.consecutiveFailures >= context.options.maxFailures) {
         throw new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
       }
