@@ -33,7 +33,7 @@ import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
-import { decodeBase64ToBytes, extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
+import { extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
 import { requestApproval } from '../../task/approval-gate';
 import { requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 import { taskRunStore } from '@extension/storage';
