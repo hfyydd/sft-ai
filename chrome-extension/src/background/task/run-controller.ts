@@ -140,6 +140,9 @@ export class RunController {
     if (checkpoint?.pendingAction) {
       throw new Error('Task has a pending approval; re-approve the exact action before recovery');
     }
+    if (checkpoint?.pendingUserRequest) {
+      throw new Error('Task is waiting for user input; answer the persisted question before recovery');
+    }
     await this.assertRecoverableTab(run.activeTabId ?? -1);
     return this.start({ ...run, status: 'running' });
   }
