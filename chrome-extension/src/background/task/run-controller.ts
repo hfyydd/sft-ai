@@ -136,6 +136,10 @@ export class RunController {
     if (!ACTIVE.has(run.status) || run.status === 'queued') throw new Error('Run is not recoverable');
     if (this.activeRunId && this.activeRunId !== run.id) throw new Error('Another task is already active');
     if (!this.factory) throw new Error('RunController executor factory is not configured');
+    const checkpoint = await taskRunStore.getCheckpoint(run.id);
+    if (checkpoint?.pendingAction) {
+      throw new Error('Task has a pending approval; re-approve the exact action before recovery');
+    }
     await this.assertRecoverableTab(run.activeTabId ?? -1);
     return this.start({ ...run, status: 'running' });
   }
