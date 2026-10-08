@@ -92,7 +92,7 @@ abstract class BasePrompt {
 The following is one-time information - if you need to remember it write it to memory:
 Current tab: ${currentTab}
 Other available tabs:
-  ${otherTabs.join('\n')}
+  ${otherTabs}
 Interactive elements from top layer of the current page inside the viewport:
 ${formattedElementsText}
 ${stepInfoDescription}
