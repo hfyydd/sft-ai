@@ -34,6 +34,18 @@ export default class BrowserContext {
     this._currentTabId = tabId;
   }
 
+  public assertUrlAllowed(url: string): void {
+    if (!isUrlAllowed(url, this._config.allowedUrls, this._config.deniedUrls)) {
+      throw new URLNotAllowedError(`URL: ${url} is not allowed`);
+    }
+  }
+
+  private async assertTabUrlAllowed(tabId: number): Promise<chrome.tabs.Tab> {
+    const tab = await chrome.tabs.get(tabId);
+    this.assertUrlAllowed(tab.url || '');
+    return tab;
+  }
+
   private async _getOrCreatePage(tab: chrome.tabs.Tab, forceUpdate = false): Promise<Page> {
     if (!tab.id) {
       throw new Error('Tab ID is not available');
@@ -221,6 +233,7 @@ export default class BrowserContext {
   public async switchTab(tabId: number): Promise<Page> {
     logger.info('switchTab', tabId);
 
+    await this.assertTabUrlAllowed(tabId);
     await chrome.tabs.update(tabId, { active: true });
     await this.waitForTabEvents(tabId, { waitForUpdate: false });
 
@@ -254,8 +267,11 @@ export default class BrowserContext {
     await chrome.tabs.update(tabId, { url, active: true });
     await this.waitForTabEvents(tabId);
 
+    // Validate the actual final URL after redirects before exposing the page to the agent.
+    const finalTab = await this.assertTabUrlAllowed(tabId);
+
     // Reattach the page after navigation completes
-    const updatedPage = await this._getOrCreatePage(await chrome.tabs.get(tabId), true);
+    const updatedPage = await this._getOrCreatePage(finalTab, true);
     await this.attachPage(updatedPage);
     this._currentTabId = tabId;
   }
@@ -273,8 +289,8 @@ export default class BrowserContext {
     // Wait for tab events
     await this.waitForTabEvents(tab.id);
 
-    // Get updated tab information
-    const updatedTab = await chrome.tabs.get(tab.id);
+    // Get updated tab information and validate the final URL after redirects.
+    const updatedTab = await this.assertTabUrlAllowed(tab.id);
     // Create and attach the page after tab is fully loaded and activated
     const page = await this._getOrCreatePage(updatedTab);
     await this.attachPage(page);
