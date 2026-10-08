@@ -376,6 +376,11 @@ const SidePanel = () => {
       portRef.current.onMessage.addListener((message: any) => {
         // Add type checking for message
         if (message && message.type === EventType.EXECUTION) {
+          if (message.data?.taskId === sessionIdRef.current) {
+            lastRunSequenceRef.current += 1;
+            const runtimeEvent = { ...message, sequence: lastRunSequenceRef.current };
+            setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), runtimeEvent].slice(-500) } : prev);
+          }
           handleTaskState(message);
         } else if (message && message.type === 'run_snapshot') {
           setRunSnapshot(message.snapshot);
