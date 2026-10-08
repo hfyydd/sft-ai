@@ -43,6 +43,11 @@ export class TaskRunStore {
     const db=await openTaskRunDatabase();const out=await new Promise<TaskRunEvent[]>((resolve,reject)=>{const a:TaskRunEvent[]=[];const q=db.transaction('events').objectStore('events').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const c=q.result;if(!c||a.length>=limit){resolve(a);return;}const e=c.value as TaskRunEvent;if(e.sequence>after)a.push(e);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;
   }
   async getSnapshot(runId:string,after=0):Promise<TaskRunSnapshot>{const run=await this.getRun(runId);if(!run)throw new Error('Unknown task run');return{run,checkpoint:await this.getCheckpoint(runId),events:await this.getEvents(runId,after)};}
+  async listBySession(sessionId:string){
+    const db=await openTaskRunDatabase();
+    const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if((cur.value as TaskRun).sessionId===sessionId)a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
+    db.close();return out;
+  }
   async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(c.value);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
   async markInterrupted(){const runs=await this.listActiveRuns();return Promise.all(runs.filter(r=>r.status==='running').map(r=>this.updateStatus(r.id,'interrupted')));}
   async addEvidence(evidence: EvidenceRecord){
