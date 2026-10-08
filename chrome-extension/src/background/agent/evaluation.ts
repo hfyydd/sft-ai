@@ -1,5 +1,7 @@
 import type { EvidenceRecord, TaskRunEvent } from '@extension/storage';
 
+export type EvaluationCategory = 'web' | 'cross_page' | 'pdf' | 'form' | 'recovery' | 'security';
+
 const HIGH_IMPACT = new Set([
   'click_element',
   'close_tab',
