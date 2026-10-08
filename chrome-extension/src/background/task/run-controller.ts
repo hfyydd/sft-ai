@@ -271,6 +271,7 @@ export class RunController {
   async pause(runId?: string) {
     const targetId = this.activeRunId ?? runId;
     if (!targetId) throw new Error('No active task');
+    if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
     if (this.executor && this.activeRunId === targetId) await this.executor.pause();
     await taskRunStore.appendEvent(targetId, 'task.pause', { reason: 'user_command' });
     await taskRunStore.updateStatus(targetId, 'paused');
@@ -315,6 +316,7 @@ export class RunController {
   async cancel(runId?: string) {
     const targetId = this.activeRunId ?? runId;
     if (!targetId) throw new Error('No active task');
+    if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
     if (this.executor && this.activeRunId === targetId) await this.executor.cancel();
     await taskRunStore.appendEvent(targetId, 'task.cancel', { reason: 'user_command' }).catch(() => undefined);
     await taskRunStore.updateStatus(targetId, 'cancelled').catch(() => undefined);
