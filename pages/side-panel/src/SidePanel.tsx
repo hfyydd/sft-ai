@@ -61,8 +61,21 @@ const SidePanel = () => {
         return false;
       }
       if (msg?.type !== 'read_file_arraybuffer' || !msg.path || !msg.path.startsWith('file://')) return false;
-      try {
-        const xhr = new XMLHttpRequest();
+      if (_sender.id !== chrome.runtime.id) {
+        sendResponse({ ok: false, error: '拒绝非扩展内部文件请求' });
+        return true;
+      }
+      void chrome.tabs.query({ url: msg.path }).then(tabs => {
+        if (!tabs.some(tab => tab.url === msg.path)) {
+          sendResponse({ ok: false, error: '该本地 PDF 未在浏览器中打开，不能读取任意文件路径' });
+          return;
+        }
+        chrome.extension.isAllowedFileSchemeAccess(allowed => {
+          if (!allowed) {
+            sendResponse({ ok: false, error: '未开启“允许访问文件网址”，请在扩展详情中开启后重试' });
+            return;
+          }
+          const xhr = new XMLHttpRequest();
         xhr.open('GET', msg.path);
         xhr.responseType = 'arraybuffer';
         xhr.onload = () => {
@@ -83,10 +96,9 @@ const SidePanel = () => {
           sendResponse({ ok: true, dataBase64: btoa(binary) });
         };
         xhr.onerror = () => sendResponse({ ok: false, error: '读取失败(可能未开启文件访问权限)' });
-        xhr.send();
-      } catch (e) {
-        sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
-      }
+          xhr.send();
+        });
+      }).catch(e => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
       return true; // 异步 sendResponse
     };
     chrome.runtime.onMessage.addListener(listener);
