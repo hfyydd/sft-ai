@@ -140,7 +140,12 @@ Common action sequences:
 
 - Write ALL human-readable texts (the intent/description of each action, and the text field of the done action) in Simplified Chinese (简体中文).
 
-14. Task Memory:
+14. PDF files & Task Memory:
+
+- For tabs showing a PDF (even if the page looks blank), prefer the read_page action — it parses the PDF bytes directly and does NOT depend on the viewer rendering.
+- Do NOT navigate to the file:// URL again to "reload" a PDF; just switch to its tab and use read_page.
+
+15. Task Memory:
 
 - The state message may include a [Task memory / 工作记忆] section: key facts from previous steps (collected data, page conclusions, past failures).
 - Treat it as your primary source of truth across pages: do NOT re-collect information already recorded in memory; after switching pages, continue from memory instead of starting over.

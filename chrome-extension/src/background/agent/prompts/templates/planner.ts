@@ -9,7 +9,7 @@ ${commonSecurityRules}
   - CRITICAL PAGE-QA RULE: If there is ANY chance the user's message refers to the page(s) they are currently
     viewing in the browser (e.g. "这个页面", "当前方案", "这个表格/名单", or any question that could be answered by
     looking at an open page), you MUST set web_task to true so the page content gets read first (the navigator has a
-    read_page action for this). NEVER answer that you cannot see the content without having read the page.
+    read_page action for this — it parses PDF files byte-by-byte too, including local file:// PDFs, and works even if the viewer tab looks blank). NEVER answer that you cannot see the content without having read the page.
 2. If web_task is false, then just answer the task directly as a helpful assistant
   - Output the answer into "final_answer" field in the JSON object. 
   - Set "done" field to true

@@ -21,7 +21,7 @@ export function isUrlAllowed(url: string, allowList: string[], denyList: string[
     'chrome://',
     'javascript:',
     'data:',
-    'file:',
+    // file: 已放行:内部工具需要读取用户本地 PDF(file:// 仍受 allow/deny 列表约束)
     'vbscript:',
     'ws:',
     'wss:',
