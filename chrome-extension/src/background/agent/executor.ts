@@ -202,6 +202,10 @@ export class Executor {
         // Run planner periodically for guidance
         if (this.planner && (context.nSteps % context.options.planningInterval === 0 || navigatorDone)) {
           navigatorDone = false;
+          context.replanCount++;
+          if (context.replanCount > context.options.maxReplans) {
+            throw new MaxFailuresReachedError('达到最大重规划次数，停止自动循环');
+          }
           latestPlanOutput = await this.runPlanner();
 
           // Check if task is complete after planner run
