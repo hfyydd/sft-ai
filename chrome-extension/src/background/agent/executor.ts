@@ -132,6 +132,7 @@ export class Executor {
       memory: this.context.taskMemory.getFacts(),
       plan: this.getPlan(),
       step: this.context.nSteps,
+      replanCount: this.context.replanCount,
       finalAnswer: this.context.finalAnswer,
       startedAt: this.context.startedAt,
       durationMs: Date.now() - this.context.startedAt,
