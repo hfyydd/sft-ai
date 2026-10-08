@@ -72,7 +72,7 @@ export async function resolveApproval(input: {
   parameterHash: string;
 }) {
   const run = await taskRunStore.getRun(input.runId);
-  if (!run || run.status !== 'waiting_approval') return false;
+  if (!run || (run.status !== 'waiting_approval' && run.status !== 'waiting_user')) return false;
 
   const resolve = pending.get(input.nonce);
   const checkpoint = await taskRunStore.getCheckpoint(input.runId);
