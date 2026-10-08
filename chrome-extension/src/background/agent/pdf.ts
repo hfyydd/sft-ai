@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/consistent-type-imports */
 // 路线二(主路线):读取 PDF 字节,用 pdf.js 提取文本层(含 OCR 文本层)。
 // 注意:pdf.js 在 MV3 Service Worker 顶层 import 可能引发崩溃,
 // 因此这里使用惰性动态加载 —— 只在真正读取 PDF 时才 import。
@@ -78,7 +79,7 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.m
 export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptions): Promise<PdfExtractResult> {
   const maxPages = options?.maxPages ?? 20;
   const maxChars = options?.maxChars ?? 30000;
-  const cMapUrl = options?.cMapUrl;
+  const cMapUrl = options?.cMapUrl?.includes('/cmaps/') ? options.cMapUrl : CMAP_BASE;
   const pdfjsLib = await loadPdfjs();
 
   const pdf = await pdfjsLib.getDocument({
@@ -87,7 +88,7 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     disableFontFace: true, // 只提取文本,不需要字体渲染
     // 中文 PDF 的 CID 字体需要 CMap 映射表才能解出 Unicode 文本
     // CMap 请求由顶部 fetch 垫片从内嵌数据返回(不发真实网络请求)
-    cMapUrl: CMAP_BASE,
+    cMapUrl,
     cMapPacked: true,
   }).promise;
 
