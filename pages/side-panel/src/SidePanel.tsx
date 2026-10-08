@@ -34,6 +34,7 @@ const SidePanel = () => {
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const [approvalAction, setApprovalAction] = useState<any | null>(null);
+  const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
   const [replayEnabled, setReplayEnabled] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const isReplayingRef = useRef<boolean>(false);
@@ -356,6 +357,10 @@ const SidePanel = () => {
         // Add type checking for message
         if (message && message.type === EventType.EXECUTION) {
           handleTaskState(message);
+        } else if (message && message.type === 'run_snapshot') {
+          setRunSnapshot(message.snapshot);
+        } else if (message && message.type === 'approval_required') {
+          setApprovalAction(message.action);
         } else if (message && message.type === 'error') {
           // Handle error messages from service worker
           appendMessage({
@@ -395,6 +400,10 @@ const SidePanel = () => {
         setInputEnabled(true);
         setShowStopButton(false);
       });
+
+      if (sessionIdRef.current) {
+        portRef.current.postMessage({ type: 'get_run_snapshot', runId: sessionIdRef.current, afterSequence: 0 });
+      }
 
       // Setup heartbeat interval
       if (heartbeatIntervalRef.current) {
