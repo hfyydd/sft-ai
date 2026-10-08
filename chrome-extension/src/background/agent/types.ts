@@ -7,7 +7,7 @@ import type { EventManager } from './event/manager';
 import { type Actors, type ExecutionState, AgentEvent } from './event/types';
 import { AgentStepHistory } from './history';
 import type { ToolPolicy } from '../services/toolPolicy';
-import type { PendingWrite, PlanStep } from '@extension/storage';
+import type { PendingAction, PendingWrite, PlanStep } from '@extension/storage';
 
 export interface AgentOptions {
   maxSteps: number;
