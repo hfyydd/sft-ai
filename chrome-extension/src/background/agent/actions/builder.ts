@@ -195,15 +195,17 @@ export class ActionBuilder {
             title,
             capturedAt: new Date().toISOString(),
             pageNumber: Number(match[1]),
+            evidenceId: evidenceIds[chunkIndex],
           },
           match[2].trim(),
         ),
       );
+      chunkIndex += 1;
     }
     if (!chunks.length) {
       return formatPageEvidence(
         'pdf',
-        { tabId, url, title, capturedAt: new Date().toISOString(), pageNumber: startPage },
+        { tabId, url, title, capturedAt: new Date().toISOString(), pageNumber: startPage, evidenceId: evidenceIds[0] },
         text,
       );
     }
@@ -713,7 +715,7 @@ export class ActionBuilder {
               ? `，如需继续读取请将 pageStart=${pdfResult.nextPageStart} 作为下一次 read_page 的起始页`
               : '';
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})${cursorMsg}`;
-            await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
+            const pdfEvidenceIds = await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
               extractedContent: this.formatPdfEvidenceForModel(
@@ -722,6 +724,7 @@ export class ActionBuilder {
                 tabInfo.title || '',
                 okMsg + ':\n' + pdfResult.text,
                 pdfResult.startPage,
+                pdfEvidenceIds,
               ),
               includeInMemory: true,
             });
