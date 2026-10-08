@@ -1043,4 +1043,9 @@
   },
   "act_readPage_ok": {"message":"已读取页面文本"},
   "act_readPage_fail": {"message":"读取页面文本失败:"}
+  "options_general_taskRunRetentionDays": {"message":"任务记录保留天数"},
+  "options_general_taskRunRetentionDays_desc": {"message":"超过该天数的已结束任务记录将被清理。"},
+  "options_general_taskRunMaxTerminalRuns": {"message":"最多保留已结束任务数"},
+  "options_general_taskRunMaxTerminalRuns_desc": {"message":"IndexedDB 中最多保留这么多已结束任务。"},
+
 }
