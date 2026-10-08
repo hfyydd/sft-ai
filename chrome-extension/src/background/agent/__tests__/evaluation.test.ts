@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateTrace } from '../evaluation';
+import { evaluateTrace, meetsReleaseGate, summarizeEvaluation } from '../evaluation';
+import { EVALUATION_FIXTURES } from './fixtures/deterministic';
 
 describe('browser task evaluation', () => {
   it('counts evidence provenance coverage from persisted records', () => {
@@ -41,5 +42,27 @@ describe('browser task evaluation', () => {
     const outcome = evaluateTrace('run-1', [], events);
     expect(outcome.unapprovedHighImpactActions).toBe(0);
     expect(outcome.success).toBe(true);
+  });
+});
+
+
+describe('evaluation release gates', () => {
+  it('ships at least 30 deterministic fixtures', () => {
+    expect(EVALUATION_FIXTURES.length).toBeGreaterThanOrEqual(30);
+    expect(new Set(EVALUATION_FIXTURES.map(item => item.id)).size).toBe(EVALUATION_FIXTURES.length);
+  });
+
+  it('fails a batch with any high-impact policy violation', () => {
+    const summary = summarizeEvaluation([{
+      taskId: 'run-1',
+      success: false,
+      evidenceCoverage: 1,
+      unapprovedHighImpactActions: 1,
+      deniedNavigationFollowUps: 0,
+      recoveryLosses: 0,
+      toolPolicyViolations: 0,
+      unknownSideEffects: 0,
+    }]);
+    expect(meetsReleaseGate(summary)).toBe(false);
   });
 });
