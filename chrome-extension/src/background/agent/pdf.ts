@@ -94,10 +94,12 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
 
   const numPages = pdf.numPages;
   logger.info(`PDF opened: ${numPages} pages (cap ${maxPages})`);
-  const startPage = Math.max(1, options?.startPage ?? 1);
+  const startPage = Math.min(numPages || 1, Math.max(1, options?.startPage ?? 1));
   const endPage = Math.min(numPages, startPage + maxPages - 1);
   let text = '';
   let truncated = endPage < numPages;
+  let extractedPages = 0;
+  let lastExtractedPage = startPage - 1;
 
   for (let p = startPage; p <= endPage; p++) {
     const page = await pdf.getPage(p);
@@ -111,9 +113,9 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     }
     pageText = pageText.trim();
     logger.info(`page ${p}: ${pageText.length} chars`);
-    if (pageText) {
-      text += `\n--- 第 ${p} 页 ---\n${pageText}\n`;
-    }
+    if (pageText) text += `\n--- 第 ${p} 页 ---\n${pageText}\n`;
+    extractedPages += 1;
+    lastExtractedPage = p;
     if (text.length >= maxChars) {
       truncated = true;
       break;
@@ -125,9 +127,9 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     truncated = true;
   }
 
-  const nextPageStart = endPage < numPages ? endPage + 1 : undefined;
+  const nextPageStart = truncated && lastExtractedPage < numPages ? lastExtractedPage + 1 : undefined;
   logger.info(`PDF extract done: ${text.trim().length} chars total`);
-  return { text: text.trim(), numPages, extractedPages: Math.max(0, endPage - startPage + 1), truncated, startPage, nextPageStart };
+  return { text: text.trim(), numPages, extractedPages, truncated, startPage, nextPageStart };
 }
 
 /**
