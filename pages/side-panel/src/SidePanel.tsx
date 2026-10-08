@@ -709,20 +709,14 @@ const SidePanel = () => {
 
   const handleSendMessage = async (text: string, displayText?: string) => {
     console.log('handleSendMessage', text);
-
-    // Trim the input text first
     const trimmedText = text.trim();
-
     if (!trimmedText) return;
 
-    // Check if the input is a command (starts with /)
     if (trimmedText.startsWith('/')) {
-      // Process command and return if it was handled
       const wasHandled = await handleCommand(trimmedText);
       if (wasHandled) return;
     }
 
-    // Block sending messages in historical sessions
     if (isHistoricalSession) {
       console.log('Cannot send messages in historical sessions');
       return;
@@ -731,22 +725,19 @@ const SidePanel = () => {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const tabId = tabs[0]?.id;
-      if (!tabId) {
-        throw new Error('No active tab found');
-      }
+      if (!tabId) throw new Error('No active tab found');
 
       setInputEnabled(false);
       setShowStopButton(true);
 
-      // Create a new chat session for this task if not in follow-up mode
+      let parentRunId: string | undefined;
+      let useFollowUp = isFollowUpMode;
+
       if (!isFollowUpMode) {
-        // Use display text for session title if available, otherwise use full text
         const titleText = displayText || text;
         const newSession = await chatHistoryStore.createSession(
           titleText.substring(0, 50) + (titleText.length > 50 ? '...' : ''),
         );
-        console.log('newSession', newSession);
-
         const sessionId = newSession.id;
         const runId = crypto.randomUUID();
         setCurrentSessionId(sessionId);
@@ -754,54 +745,44 @@ const SidePanel = () => {
         runIdRef.current = runId;
       } else if (!runIdRef.current) {
         runIdRef.current = runSnapshot?.run?.id ?? crypto.randomUUID();
-      } else if (['completed','failed','cancelled'].includes(runSnapshot?.run?.status)) {
-        const parentRunId = runIdRef.current;
+      }
+
+      if (isFollowUpMode && ['completed', 'failed', 'cancelled'].includes(runSnapshot?.run?.status)) {
+        parentRunId = runIdRef.current ?? undefined;
         runIdRef.current = crypto.randomUUID();
-        (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId = parentRunId;
+        useFollowUp = false;
       }
 
       const userMessage = {
         actor: Actors.USER,
-        content: displayText || text, // Use display text for chat UI, full text for background service
+        content: displayText || text,
         timestamp: Date.now(),
       };
-
-      // Pass the sessionId directly to appendMessage
       appendMessage(userMessage, sessionIdRef.current);
 
-      // Setup connection if not exists
-      if (!portRef.current) {
-        setupConnection();
-      }
+      if (!portRef.current) setupConnection();
 
-      // Send message using the utility function
-      if (isFollowUpMode) {
-        // Send as follow-up task
+      if (useFollowUp) {
         await sendMessage({
           type: 'follow_up_task',
           task: text,
           taskId: runIdRef.current,
           runId: runIdRef.current,
           sessionId: sessionIdRef.current,
-          parentRunId: (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId,
           tabId,
           skillIds: selectedSkillIds,
         });
-        console.log('follow_up_task sent', text, tabId, sessionIdRef.current);
       } else {
-        // Send as new task
         await sendMessage({
           type: 'new_task',
           task: text,
           taskId: runIdRef.current,
           runId: runIdRef.current,
           sessionId: sessionIdRef.current,
-          parentRunId: (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId,
+          parentRunId,
           tabId,
           skillIds: selectedSkillIds,
         });
-        delete (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId;
-        console.log('new_task sent', text, tabId, sessionIdRef.current);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -816,12 +797,12 @@ const SidePanel = () => {
       stopConnection();
     }
   };
-
   const handleStopTask = async () => {
     try {
       portRef.current?.postMessage({
         type: 'cancel_task',
-        taskId: sessionIdRef.current,
+        taskId: runIdRef.current,
+      runId: runIdRef.current,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
