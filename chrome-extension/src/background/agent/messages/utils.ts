@@ -63,7 +63,7 @@ export function extractJsonFromModelOutput(content: string): Record<string, unkn
       let dm: RegExpExecArray | null;
       while ((dm = dsmlRe.exec(processedContent))) {
         const name = dm[1];
-        let rawVal = dm[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
+        const rawVal = dm[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
         try {
           obj[name] = JSON.parse(rawVal);
         } catch {
