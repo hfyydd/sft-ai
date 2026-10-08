@@ -311,11 +311,19 @@ export class Executor {
         error instanceof ChatModelAuthError ||
         error instanceof ChatModelBadRequestError ||
         error instanceof ChatModelForbiddenError ||
-        error instanceof URLNotAllowedError ||
         error instanceof RequestCancelledError ||
         error instanceof ExtensionConflictError
       ) {
         throw error;
+      }
+      if (error instanceof URLNotAllowedError) {
+        // 被安全策略阻止的 URL(如 chrome:// 页)是可恢复失败:告知模型换目标,任务继续
+        context.taskMemory.add(
+          `目标 URL 被安全策略阻止(${String(error.message).slice(0, 120)})。chrome:// 等浏览器内部页面无法访问,请改用普通 http(s) 页面。`,
+        );
+        context.consecutiveFailures++;
+        logger.warning('Step failed with URLNotAllowedError (recoverable):', error.message);
+        return false;
       }
       context.taskMemory.add(
         `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,

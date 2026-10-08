@@ -50,6 +50,32 @@ export function extractJsonFromModelOutput(content: string): Record<string, unkn
   try {
     let processedContent = content;
 
+    // markdown 代码围栏:取围栏内内容
+    const fenceMatch = processedContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+      processedContent = fenceMatch[1].trim();
+    }
+
+    // DeepSeek DSML 标记格式:把各 parameter 段合并为对象
+    if (processedContent.includes('DSML')) {
+      const obj: Record<string, unknown> = {};
+      const dsmlRe = /<｜｜DSML｜｜ parameter name="([^"]+)"[^>]*>([\s\S]*?)(?=<｜｜DSML｜｜ |<\/｜｜DSML｜｜|$)/g;
+      let dm: RegExpExecArray | null;
+      while ((dm = dsmlRe.exec(processedContent))) {
+        const name = dm[1];
+        let rawVal = dm[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
+        try {
+          obj[name] = JSON.parse(rawVal);
+        } catch {
+          obj[name] = rawVal;
+        }
+      }
+      if (Object.keys(obj).length > 0) {
+        return obj;
+      }
+      processedContent = processedContent.replace(/<｜｜DSML｜｜[\s\S]*?<\/｜｜DSML｜｜[^>]*>/g, ' ').trim();
+    }
+
     // Handle Llama's tool call format first
     if (processedContent.includes('<|tool_call_start_id|>')) {
       // Extract content between tool call tags
@@ -144,10 +170,18 @@ export function convertInputMessages(inputMessages: BaseMessage[], modelName: st
   if (modelName === null) {
     return inputMessages;
   }
-  if (modelName === 'deepseek-reasoner' || modelName.includes('deepseek-r1')) {
+  // DeepSeek 手工 JSON 模式(非强制 tool_choice):与非 function-calling 模型同样转换,
+  // 并追加严格 JSON 输出提醒
+  if (modelName === 'deepseek-reasoner' || modelName.includes('deepseek-r1') || modelName.startsWith('deepseek')) {
     const convertedInputMessages = convertMessagesForNonFunctionCallingModels(inputMessages);
     let mergedInputMessages = mergeSuccessiveMessages(convertedInputMessages, HumanMessage);
     mergedInputMessages = mergeSuccessiveMessages(mergedInputMessages, AIMessage);
+    mergedInputMessages.push(
+      new SystemMessage({
+        content:
+          'REMINDER: Reply with exactly ONE JSON object matching the RESPONSE FORMAT in the system prompt. No extra text, no markdown fences, no special markup tags.',
+      }),
+    );
     return mergedInputMessages;
   }
   return inputMessages;

@@ -287,7 +287,22 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       }
       if (Object.keys(obj).length > 0) {
         logger.debug('DSML salvage parsed keys:', Object.keys(obj));
-        const validated = this.validateModelOutput(obj as this['ModelOutput']);
+        let validated = this.validateModelOutput(obj as this['ModelOutput']);
+        if (!validated) {
+          // 宽容合并:DSML 参数可能只覆盖部分字段,缺失的规划字段补默认值后再校验
+          const merged = {
+            observation: '',
+            challenges: '',
+            done: false,
+            next_steps: '',
+            final_answer: '',
+            reasoning: '',
+            web_task: true,
+            memory_write: '',
+            ...(obj as Record<string, unknown>),
+          };
+          validated = this.validateModelOutput(merged as this['ModelOutput']);
+        }
         if (validated) {
           logger.info('DSML salvage succeeded');
           return validated;
