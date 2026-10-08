@@ -129,7 +129,8 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       if (memoryWrite) {
         const evidenceIds = [...memoryWrite.matchAll(/(?:evidence|证据)\s*[:：]\s*([A-Za-z0-9_, -]+)/gi)]
           .flatMap(match => match[1].split(/[，,\s]+/).filter(Boolean));
-        this.context.taskMemory.add(memoryWrite, evidenceIds, this.context.plan[0]?.id);
+        const targetStep = this.context.plan.find(step => step.status === 'running')?.id;
+        this.context.taskMemory.add(memoryWrite, evidenceIds, targetStep);
       }
 
       // If task is done, emit the final answer; otherwise emit next steps
