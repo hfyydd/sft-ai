@@ -6,6 +6,7 @@ interface ApprovalRequest {
   args: unknown;
   tabId?: number;
   url?: string;
+  targetUrl?: string;
   reason?: string;
 }
 
@@ -23,6 +24,7 @@ async function actionMatches(action: PendingAction, input: ApprovalRequest) {
   if (action.parameterHash !== parameterHash || (action.expiresAt && action.expiresAt < Date.now())) return false;
   if (action.tabId !== input.tabId) return false;
   if ((action.url || '') !== (input.url || '')) return false;
+  if ((action.targetUrl || '') !== (input.targetUrl || '')) return false;
   return true;
 }
 
@@ -62,6 +64,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     argsSummary: JSON.stringify(input.args),
     tabId: input.tabId,
     url: input.url,
+    targetUrl: input.targetUrl,
     expiresAt: Date.now() + 5 * 60_000,
     nonce,
     parameterHash,
