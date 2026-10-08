@@ -56,6 +56,7 @@ export class AgentContext {
   taskMemory: TaskMemory;
   toolPolicy?: ToolPolicy;
   plan: PlanStep[];
+  startedAt: number;
 
   constructor(
     taskId: string,
@@ -84,6 +85,7 @@ export class AgentContext {
     this.taskMemory = new TaskMemory();
     this.toolPolicy = toolPolicy;
     this.plan = [];
+    this.startedAt = Date.now();
   }
 
   async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {
