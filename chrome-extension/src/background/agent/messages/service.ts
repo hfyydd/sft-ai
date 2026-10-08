@@ -245,7 +245,31 @@ export default class MessageManager {
     this.history.removeLastStateMessage();
   }
 
+  private compactHistoryIfNeeded(): void {
+    const budget = Math.max(1000, this.settings.maxInputTokens - Math.max(512, Math.floor(this.settings.maxInputTokens * 0.08)));
+    if (this.history.totalTokens <= budget) return;
+
+    const protectedStart = Math.min(6, this.history.messages.length);
+    const protectedEnd = Math.min(8, Math.max(0, this.history.messages.length - protectedStart));
+    while (this.history.totalTokens > budget && this.history.messages.length > protectedStart + protectedEnd) {
+      const end = this.history.messages.length - protectedEnd;
+      let removed = false;
+      for (let i = protectedStart; i < end; i++) {
+        const managed = this.history.messages[i];
+        if (managed.metadata.message_type !== 'init') {
+          this.history.removeMessage(i);
+          removed = true;
+          break;
+        }
+      }
+      if (!removed) break;
+    }
+
+    if (this.history.totalTokens > budget) this.cutMessages();
+  }
+
   public getMessages(): BaseMessage[] {
+    this.compactHistoryIfNeeded();
     const messages = this.history.messages
       .filter(m => {
         if (!m.message) {
