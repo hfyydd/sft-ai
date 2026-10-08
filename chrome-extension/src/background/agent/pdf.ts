@@ -76,9 +76,16 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.m
  * 从 PDF 字节提取文本层。
  * - 纯图片扫描件没有文本层,返回空文本(调用方可回退到截图+视觉模型)
  */
+export function validatePdfBytes(data: Uint8Array): void {
+  if (data.byteLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
+  const header = new TextDecoder().decode(data.slice(0, 5));
+  if (header !== '%PDF-') throw new Error('文件不是有效 PDF');
+}
+
 export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptions): Promise<PdfExtractResult> {
-  const maxPages = options?.maxPages ?? 20;
-  const maxChars = options?.maxChars ?? 30000;
+  validatePdfBytes(data);
+  const maxPages = Math.min(20, options?.maxPages ?? 20);
+  const maxChars = Math.min(30000, options?.maxChars ?? 30000);
   const cMapUrl = options?.cMapUrl?.includes('/cmaps/') ? options.cMapUrl : CMAP_BASE;
   const pdfjsLib = await loadPdfjs();
 
@@ -145,7 +152,7 @@ export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOpt
   const contentLength = Number(res.headers.get('content-length') || 0);
   if (contentLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
   const data = new Uint8Array(await res.arrayBuffer());
-  if (data.byteLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
+  validatePdfBytes(data);
   return extractPdfData(data, options);
 }
 
@@ -157,7 +164,6 @@ export function decodeBase64ToBytes(base64:string):Uint8Array {
 }
 
 export async function extractPdfTextFromBytes(data:Uint8Array,options?:PdfExtractOptions){
-  const maxBytes=MAX_PDF_BYTES;
-  if(data.byteLength>maxBytes) throw new Error(`PDF 文件超过 ${maxBytes} 字节限制`);
+  validatePdfBytes(data);
   return extractPdfData(data,options);
 }
