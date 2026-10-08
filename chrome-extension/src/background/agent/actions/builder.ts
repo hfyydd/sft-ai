@@ -33,18 +33,18 @@ import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
 import { decodeBase64ToBytes, extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
 import { requestApproval } from '../../task/approval-gate';
+import { requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 import { taskRunStore } from '@extension/storage';
 
 const logger = createLogger('Action');
 
 const SENSITIVE_INTENT = /(提交|删除|购买|支付|付款|发送|授权|下载|保存|确认|结算|下单|注销|关闭账号|submit|delete|purchase|pay|checkout|send|authorize|download)/i;
 
-const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') => {
-  if (toolName === 'close_tab') return true;
-  if (toolName === 'click_element' || toolName === 'send_keys' || toolName === 'select_dropdown_option') return SENSITIVE_INTENT.test(intent) || SENSITIVE_INTENT.test(elementText);
-  if (toolName === 'input_text') return SENSITIVE_INTENT.test(intent);
-  return false;
-};
+const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') =>
+  toolName === 'close_tab' ||
+  policyRequiresApproval(toolName, { ...((args && typeof args === 'object') ? args : {}), intent }, elementText) ||
+  SENSITIVE_INTENT.test(intent) ||
+  SENSITIVE_INTENT.test(elementText);
 
 export class InvalidInputError extends Error {
   constructor(message: string) {
