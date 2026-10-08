@@ -1079,10 +1079,24 @@ export default class Page {
           try {
             logger.info('Trying XPath selector:', xpath);
             const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
-            const xpathSelector = `::-p-xpath(${fullXpath})`;
-            const xpathMatches = await currentFrame.$(xpathSelector);
-            if (xpathMatches.length === 1) elementHandle = xpathMatches[0];
-            else if (xpathMatches.length > 1) logger.warning(`XPath matched ${xpathMatches.length} elements`);
+            const xpathCount = await currentFrame.evaluate(
+              expression => {
+                const result = document.evaluate(
+                  expression,
+                  document,
+                  null,
+                  XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                  null,
+                );
+                return result.snapshotLength;
+              },
+              fullXpath,
+            ).catch(() => 0);
+            if (xpathCount === 1) {
+              elementHandle = await currentFrame.$(`::-p-xpath(${fullXpath})`);
+            } else if (xpathCount > 1) {
+              logger.warning(`XPath matched ${xpathCount} elements`);
+            }
           } catch (xpathError) {
             logger.error('Failed to locate element using XPath:', xpathError);
           }
