@@ -366,6 +366,7 @@ const SidePanel = () => {
           handleTaskState(message);
         } else if (message && message.type === 'run_snapshot') {
           setRunSnapshot(message.snapshot);
+          if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
         } else if (message && message.type === 'approval_required') {
           setApprovalAction(message.action);
         } else if (message && message.type === 'run_evidence') {
