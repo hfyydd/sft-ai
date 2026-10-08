@@ -3,6 +3,7 @@ export enum Actors {
   USER = 'user',
   PLANNER = 'planner',
   NAVIGATOR = 'navigator',
+  VERIFIER = 'verifier',
 }
 
 export enum EventType {
