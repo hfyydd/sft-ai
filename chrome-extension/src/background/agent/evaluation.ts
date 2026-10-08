@@ -120,3 +120,44 @@ export function evaluateFixture(
 ): EvaluationOutcome {
   return evaluateTrace(taskId, requirements.requiredEvidence, events, evidence);
 }
+
+
+export interface EvaluationBatch {
+  total: number;
+  passed: number;
+  successRate: number;
+  averageEvidenceCoverage: number;
+  unapprovedHighImpactActions: number;
+  deniedNavigationFollowUps: number;
+  recoveryLosses: number;
+  toolPolicyViolations: number;
+  unknownSideEffects: number;
+}
+
+export function summarizeEvaluation(results: EvaluationOutcome[]): EvaluationBatch {
+  const total = results.length;
+  if (!total) {
+    return {
+      total: 0,
+      passed: 0,
+      successRate: 0,
+      averageEvidenceCoverage: 0,
+      unapprovedHighImpactActions: 0,
+      deniedNavigationFollowUps: 0,
+      recoveryLosses: 0,
+      toolPolicyViolations: 0,
+      unknownSideEffects: 0,
+    };
+  }
+  return {
+    total,
+    passed: results.filter(result => result.success).length,
+    successRate: results.filter(result => result.success).length / total,
+    averageEvidenceCoverage: results.reduce((sum, result) => sum + result.evidenceCoverage, 0) / total,
+    unapprovedHighImpactActions: results.reduce((sum, result) => sum + result.unapprovedHighImpactActions, 0),
+    deniedNavigationFollowUps: results.reduce((sum, result) => sum + result.deniedNavigationFollowUps, 0),
+    recoveryLosses: results.reduce((sum, result) => sum + result.recoveryLosses, 0),
+    toolPolicyViolations: results.reduce((sum, result) => sum + result.toolPolicyViolations, 0),
+    unknownSideEffects: results.reduce((sum, result) => sum + result.unknownSideEffects, 0),
+  };
+}
