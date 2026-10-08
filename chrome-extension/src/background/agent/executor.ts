@@ -26,6 +26,7 @@ import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
 import type { ToolPolicy } from '../services/toolPolicy';
+import type { TaskCheckpoint, PlanStep } from '@extension/storage';
 
 const logger = createLogger('Executor');
 
@@ -95,9 +96,18 @@ export class Executor {
     this.context.messageManager.initTaskMessages(this.navigatorPrompt.getSystemMessage(), task);
   }
 
+  hydrateRuntime(checkpoint?: TaskCheckpoint) {
+    if (!checkpoint) return;
+    this.context.plan = [...checkpoint.plan];
+    this.context.taskMemory.loadFacts(checkpoint.memory);
+  }
+
+  getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
+
   getRuntimeSnapshot() {
     return {
       memory: this.context.taskMemory.getFacts(),
+      plan: this.getPlan(),
       step: this.context.nSteps,
       finalAnswer: this.context.finalAnswer,
     };
@@ -271,6 +281,7 @@ export class Executor {
         planOutput = await this.planner.execute();
       }
       if (planOutput.result) {
+        this.context.plan = planOutput.result.steps ?? this.context.plan;
         this.context.messageManager.addPlan(JSON.stringify(planOutput.result), positionForPlan);
       }
       return planOutput;
