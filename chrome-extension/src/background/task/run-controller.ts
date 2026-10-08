@@ -135,12 +135,23 @@ export class RunController {
       }).catch(() => undefined);
     }
     if (snapshot && !(nextStatus && TERMINAL.has(nextStatus))) {
+      const currentCheckpoint = await taskRunStore.getCheckpoint(run.id).catch(() => undefined);
       await taskRunStore.saveCheckpoint({
-        runId: run.id, sequence: persisted.sequence, plan: snapshot.plan, completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
-        memory: snapshot.memory, evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id), activeTabId: run.activeTabId,
+        runId: run.id,
+        sequence: persisted.sequence,
+        plan: snapshot.plan,
+        completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
+        memory: snapshot.memory,
+        evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id),
+        activeTabId: observedTabId ?? run.activeTabId,
         pendingWrite: snapshot.pendingWrite,
-        approvedAction: snapshot.approvedAction,
+        approvedAction: snapshot.approvedAction ?? currentCheckpoint?.approvedAction,
+        pendingAction: currentCheckpoint?.pendingAction,
+        pendingUserRequest: currentCheckpoint?.pendingUserRequest,
+        pendingFileRead: currentCheckpoint?.pendingFileRead,
       }).catch(async error => {
+        if (error instanceof Error && error.message === 'Stale checkpoint') return;
+
         await taskRunStore.updateStatus(run.id, 'paused').catch(() => undefined);
         await taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined);
         await this.executor?.pause().catch(() => undefined);
@@ -153,6 +164,14 @@ export class RunController {
     const run = await taskRunStore.getRun(runId);
     if (!run) throw new Error('Unknown task run');
     if (this.activeRunId && this.activeRunId !== runId) throw new Error('Another task is already active');
+
+    if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+      throw new Error('终态任务不能直接追加 Follow-up，请创建新的任务运行');
+    }
+
+    if (run.status === 'interrupted' && !this.executor) {
+      await this.recover(run.id);
+    }
 
     if (!this.executor) {
       if (!this.factory) throw new Error('RunController executor factory is not configured');
