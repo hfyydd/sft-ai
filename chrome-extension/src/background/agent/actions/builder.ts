@@ -510,7 +510,7 @@ export class ActionBuilder {
       let pdfExtractionFailed = false;
       let pdfAttempted = false;
 
-      // 路线二(主路线):PDF → 读取字节 + pdf.js 提取文本层(含 OCR 文本层)。
+      // 路线二(主路线):PDF → 读取字节 + pdf.js 提取文本层；纯扫描件再走视觉模型。
       // 不依赖 PDF 查看器的渲染状态:查看器显示错误页时同样可用
       if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^(https?|file):/i.test(tabUrl)) {
         pdfAttempted = true;
