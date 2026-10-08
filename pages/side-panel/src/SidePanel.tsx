@@ -54,7 +54,7 @@ const SidePanel = () => {
     const listener = (
       msg: { type?: string; path?: string; requestId?: string },
       _sender: chrome.runtime.MessageSender,
-      sendResponse: (resp: { ok: boolean; dataBase64?: string; error?: string }) => void,
+      sendResponse: (resp: { ok: boolean; requestId?: string; dataBase64?: string; error?: string }) => void,
     ) => {
       if (msg?.type === 'approval_required') {
         setApprovalAction(msg.action);
@@ -62,17 +62,17 @@ const SidePanel = () => {
       }
       if (msg?.type !== 'read_file_arraybuffer' || !msg.path || !msg.path.startsWith('file://')) return false;
       if (_sender.id !== chrome.runtime.id) {
-        sendResponse({ ok: false, error: '拒绝非扩展内部文件请求' });
+        sendResponse({ ok: false, requestId: msg.requestId, error: '拒绝非扩展内部文件请求' });
         return true;
       }
       void chrome.tabs.query({ url: msg.path }).then(tabs => {
         if (!tabs.some(tab => tab.url === msg.path)) {
-          sendResponse({ ok: false, error: '该本地 PDF 未在浏览器中打开，不能读取任意文件路径' });
+          sendResponse({ ok: false, requestId: msg.requestId, error: '该本地 PDF 未在浏览器中打开，不能读取任意文件路径' });
           return;
         }
         chrome.extension.isAllowedFileSchemeAccess(allowed => {
           if (!allowed) {
-            sendResponse({ ok: false, error: '未开启“允许访问文件网址”，请在扩展详情中开启后重试' });
+            sendResponse({ ok: false, requestId: msg.requestId, error: '未开启“允许访问文件网址”，请在扩展详情中开启后重试' });
             return;
           }
           const xhr = new XMLHttpRequest();
@@ -80,12 +80,12 @@ const SidePanel = () => {
         xhr.responseType = 'arraybuffer';
         xhr.onload = () => {
           if (xhr.status !== 200 && xhr.status !== 0) {
-            sendResponse({ ok: false, error: 'HTTP ' + xhr.status });
+            sendResponse({ ok: false, requestId: msg.requestId, error: 'HTTP ' + xhr.status });
             return;
           }
           const bytes = new Uint8Array(xhr.response);
           if (bytes.byteLength > 10 * 1024 * 1024) {
-            sendResponse({ ok: false, error: '本地 PDF 超过 10MB 限制' });
+            sendResponse({ ok: false, requestId: msg.requestId, error: '本地 PDF 超过 10MB 限制' });
             return;
           }
           let binary = '';
@@ -93,9 +93,9 @@ const SidePanel = () => {
           for (let i = 0; i < bytes.length; i += chunkSize) {
             binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as unknown as number[]);
           }
-          sendResponse({ ok: true, dataBase64: btoa(binary) });
+          sendResponse({ ok: true, requestId: msg.requestId, dataBase64: btoa(binary) });
         };
-        xhr.onerror = () => sendResponse({ ok: false, error: '读取失败(可能未开启文件访问权限)' });
+        xhr.onerror = () => sendResponse({ ok: false, requestId: msg.requestId, error: '读取失败(可能未开启文件访问权限)' });
           xhr.send();
         });
       }).catch(e => sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }));
