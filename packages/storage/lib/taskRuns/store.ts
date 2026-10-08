@@ -62,6 +62,31 @@ export class TaskRunStore {
     db.close();return out;
   }
 
+  async cleanupRetention(maxTerminalRuns = 30, maxEventsPerRun = 2000, maxEvidencePerRun = 200) {
+    const db=await openTaskRunDatabase();
+    const terminal=new Set<TaskRunStatus>(['completed','failed','cancelled']);
+    const runs=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if(terminal.has((cur.value as TaskRun).status))a.push(normalizeRun(cur.value)!);cur.continue();};q.onerror=()=>reject(q.error);});
+    db.close();
+    runs.sort((a,b)=>b.updatedAt-a.updatedAt);
+    for(const run of runs.slice(maxTerminalRuns)) await this.removeRun(run.id);
+    for(const run of runs.slice(0,maxTerminalRuns)){
+      await this.trimEvents(run.id,maxEventsPerRun);
+      await this.trimEvidence(run.id,maxEvidencePerRun);
+    }
+  }
+
+  private async trimEvents(runId:string,maxItems:number){
+    const db=await openTaskRunDatabase();
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('events','readwrite');const idx=tx.objectStore('events').index('runId');const values:IDBValidKey[]=[];const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){const excess=Math.max(0,values.length-maxItems);for(let i=0;i<excess;i++)tx.objectStore('events').delete(values[i]);return;}values.push(cur.primaryKey as IDBValidKey);cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    db.close();
+  }
+
+  private async trimEvidence(runId:string,maxItems:number){
+    const db=await openTaskRunDatabase();
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');const idx=tx.objectStore('evidence').index('runId');const values:IDBValidKey[]=[];const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){const excess=Math.max(0,values.length-maxItems);for(let i=0;i<excess;i++)tx.objectStore('evidence').delete(values[i]);return;}values.push(cur.primaryKey as IDBValidKey);cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    db.close();
+  }
+
   async removeRun(runId:string){const db=await openTaskRunDatabase();await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints','evidence'],'readwrite');tx.objectStore('runs').delete(runId);tx.objectStore('checkpoints').delete(runId);const evidence=tx.objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(runId));evidence.onsuccess=()=>{const cur=evidence.result;if(cur){cur.delete();cur.continue();}};const q=tx.objectStore('events').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const c=q.result;if(c){c.delete();c.continue();}};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();}
 }
 export const taskRunStore=new TaskRunStore();
