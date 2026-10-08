@@ -42,6 +42,7 @@ const SidePanel = () => {
   const [userRequest, setUserRequest] = useState<any | null>(null);
   const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
   const [runEvidence, setRunEvidence] = useState<EvidenceItem[]>([]);
+  const [timelineHasMore, setTimelineHasMore] = useState(false);
   const [manualSkills, setManualSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
@@ -392,6 +393,7 @@ const SidePanel = () => {
           setRunSnapshot(message.snapshot);
           const snapshotEvents = message.snapshot?.events || [];
           lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
+          setTimelineHasMore(snapshotEvents.length > 0 && snapshotEvents[0].sequence > 1);
           if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
           if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
         } else if (message && message.type === 'run_event') {
@@ -407,6 +409,10 @@ const SidePanel = () => {
           setUserRequest(message.request);
         } else if (message && message.type === 'run_evidence') {
           setRunEvidence(message.evidence || []);
+        } else if (message && message.type === 'run_events_before') {
+          const events = message.events || [];
+          setRunSnapshot((prev: any) => prev ? { ...prev, events: [...events, ...(prev.events || [])] } : prev);
+          setTimelineHasMore(events.length > 0 && events[0]?.sequence > 1);
         } else if (message && message.type === 'error') {
           // Handle error messages from service worker
           appendMessage({
