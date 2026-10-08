@@ -15,8 +15,8 @@ export function checkpointIsValid(run: TaskRun, sequence: number): boolean {
 }
 
 export class TaskRunStore {
-  async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number;skillIds?:string[]}):Promise<TaskRun>{
-    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0,lastEventSequence:0,skillIds:input.skillIds??[]};
+  async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number;skillIds?:string[];parentRunId?:string}):Promise<TaskRun>{
+    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0,lastEventSequence:0,skillIds:input.skillIds??[],parentRunId:input.parentRunId};
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').add(run);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close(); return run;
@@ -85,6 +85,24 @@ export class TaskRunStore {
   }
 
   async getSnapshot(runId:string,after=0):Promise<TaskRunSnapshot>{const run=await this.getRun(runId);if(!run)throw new Error('Unknown task run');return{run,checkpoint:await this.getCheckpoint(runId),events:await this.getEvents(runId,after)};}
+  async inheritContext(parentRunId:string, childRunId:string, activeTabId?:number) {
+    const parent = await this.getRun(parentRunId);
+    const child = await this.getRun(childRunId);
+    if (!parent || !child) throw new Error('Task context source or target does not exist');
+    const parentCheckpoint = await this.getCheckpoint(parentRunId);
+    if (!parentCheckpoint) return;
+    const inheritedMemory = parentCheckpoint.memory.map(fact => ({ ...fact, evidenceIds: [...fact.evidenceIds] }));
+    await this.saveCheckpoint({
+      runId: childRunId,
+      sequence: 0,
+      plan: [],
+      completedStepIds: [],
+      memory: inheritedMemory,
+      evidenceIds: [...parentCheckpoint.evidenceIds],
+      activeTabId: activeTabId ?? child.activeTabId,
+    });
+  }
+
   async listBySession(sessionId:string){
     const db=await openTaskRunDatabase();
     const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if((cur.value as TaskRun).sessionId===sessionId)a.push(normalizeRun(cur.value)!);cur.continue();};q.onerror=()=>reject(q.error);});
@@ -114,10 +132,18 @@ export class TaskRunStore {
     db.close();
   }
 
-  async getEvidence(runId:string,limit=200){
-    const db=await openTaskRunDatabase();
-    const out=await new Promise<EvidenceRecord[]>((resolve,reject)=>{const a:EvidenceRecord[]=[];const q=db.transaction('evidence').objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur||a.length>=limit){resolve(a);return;}a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
-    db.close();return out;
+  async getEvidence(runId:string,limit=200):Promise<EvidenceRecord[]>{
+    const seen=new Set<string>();
+    const out:EvidenceRecord[]=[];
+    let current: TaskRun|undefined = await this.getRun(runId);
+    while(current && out.length<limit){
+      const db=await openTaskRunDatabase();
+      const batch=await new Promise<EvidenceRecord[]>((resolve,reject)=>{const a:EvidenceRecord[]=[];const q=db.transaction('evidence').objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(current!.id));q.onsuccess=()=>{const cur=q.result;if(!cur||a.length>=limit){resolve(a);return;}a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
+      db.close();
+      for(const item of batch) if(!seen.has(item.id)){seen.add(item.id);out.push(item);}
+      current=current.parentRunId?await this.getRun(current.parentRunId):undefined;
+    }
+    return out.slice(0,limit);
   }
 
   async listAllRuns(): Promise<TaskRun[]> {
