@@ -457,6 +457,17 @@ export class ActionBuilder {
           const initialTabIds = await this.context.browserContext.getAllTabIds();
           const initialUrl = page.url();
           await page.clickElementNode(this.context.options.useVision, elementNode);
+          await new Promise(resolve => setTimeout(resolve, 300));
+          if (!(await page.verifyClickEffect(input.index, initialUrl))) {
+            const msg = '点击已执行但未观察到可验证变化，结果无法确认';
+            await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+              toolName: 'click_element',
+              index: input.index,
+              url: initialUrl,
+            }).catch(() => undefined);
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+            return new ActionResult({ error: msg, sideEffectUnknown: true, includeInMemory: true });
+          }
           let msg = t('act_click_ok', [input.index.toString(), elementNode.getAllTextTillNextClickableElement(2)]);
           logger.info(msg);
 
@@ -567,6 +578,12 @@ export class ActionBuilder {
       });
       if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
       await this.context.browserContext.closeTab(input.tab_id);
+      const closed = !(await chrome.tabs.get(input.tab_id).catch(() => null));
+      if (!closed) {
+        const msg = '关闭标签页后仍然存在，结果无法确认';
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+        return new ActionResult({ error: msg, sideEffectUnknown: true, includeInMemory: true });
+      }
       const msg = t('act_closeTab_ok', [input.tab_id.toString()]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
