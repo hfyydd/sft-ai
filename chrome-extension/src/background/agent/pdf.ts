@@ -37,11 +37,14 @@ export interface PdfExtractResult {
   numPages: number;
   extractedPages: number;
   truncated: boolean;
+  startPage: number;
+  nextPageStart?: number;
 }
 
 export interface PdfExtractOptions {
   maxPages?: number;
   maxChars?: number;
+  startPage?: number;
   /** 中文 PDF 的 CID 字体需要 CMap 映射表;扩展内传 chrome.runtime.getURL('cmaps/') */
   cMapUrl?: string;
 }
@@ -90,11 +93,12 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
 
   const numPages = pdf.numPages;
   logger.info(`PDF opened: ${numPages} pages (cap ${maxPages})`);
-  const pageCount = Math.min(numPages, maxPages);
+  const startPage = Math.max(1, options?.startPage ?? 1);
+  const endPage = Math.min(numPages, startPage + maxPages - 1);
   let text = '';
-  let truncated = false;
+  let truncated = endPage < numPages;
 
-  for (let p = 1; p <= pageCount; p++) {
+  for (let p = startPage; p <= endPage; p++) {
     const page = await pdf.getPage(p);
     const content = await page.getTextContent();
     let pageText = '';
@@ -120,8 +124,9 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     truncated = true;
   }
 
+  const nextPageStart = endPage < numPages ? endPage + 1 : undefined;
   logger.info(`PDF extract done: ${text.trim().length} chars total`);
-  return { text: text.trim(), numPages, extractedPages: pageCount, truncated };
+  return { text: text.trim(), numPages, extractedPages: Math.max(0, endPage - startPage + 1), truncated, startPage, nextPageStart };
 }
 
 /**
