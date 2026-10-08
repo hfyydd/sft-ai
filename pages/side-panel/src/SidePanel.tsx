@@ -110,7 +110,6 @@ const SidePanel = () => {
               type: 'resolve_local_file_read',
               runId: msg.request.runId,
               requestId: msg.request.requestId,
-              dataBase64: '',
               error: error instanceof Error ? error.message : String(error),
             }),
           );
