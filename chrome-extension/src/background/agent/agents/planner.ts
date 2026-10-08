@@ -127,7 +127,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       // Agent Loop v2: 规划器把关键事实写入工作记忆
       const memoryWrite = (cleanedPlan.memory_write || '').trim();
       if (memoryWrite) {
-        const evidenceIds = [...memoryWrite.matchAll(/(?:evidence|证据)\\s*[:：]\\s*([A-Za-z0-9_, -]+)/gi)]
+        const evidenceIds = [...memoryWrite.matchAll(/(?:evidence|证据)\s*[:：]\s*([A-Za-z0-9_, -]+)/gi)]
           .flatMap(match => match[1].split(/[，,\\s]+/).filter(Boolean));
         this.context.taskMemory.add(memoryWrite, evidenceIds, this.context.plan[0]?.id);
       }
