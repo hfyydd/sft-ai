@@ -201,6 +201,11 @@ chrome.runtime.onConnect.addListener(port => {
             }
             const ok = await resolveUserRequest({ runId: message.runId, nonce: message.nonce, answer: message.answer });
             if (ok) {
+              if (!runController.getExecutor()) {
+                await runController.resume(message.runId).catch(error => logger.warning('User response accepted; resume deferred:', error));
+                currentExecutor = runController.getExecutor();
+                if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+              }
               return port.postMessage({ type: 'success' });
             }
             return port.postMessage({ type: 'error', error: '用户介入请求已过期或无效' });
