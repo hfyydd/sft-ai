@@ -974,7 +974,12 @@ const SidePanel = () => {
       <div className={`flex h-screen flex-col overflow-hidden ${isDarkMode ? 'bg-zinc-950' : 'bg-white'}`}>
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            {showHistory ? (
+            {!showHistory && runSnapshot?.run && (
+          <div className="border-b px-3 py-1 text-[11px] text-zinc-500">
+            任务状态：{runSnapshot.run.status} · 已记录事件 {runSnapshot.events?.length ?? 0}
+          </div>
+        )}
+        {showHistory ? (
               <button
                 type="button"
                 onClick={() => handleBackToChat(false)}
