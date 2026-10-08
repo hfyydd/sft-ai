@@ -160,7 +160,7 @@ export class Executor {
    */
   private checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): boolean {
     if (planOutput?.result?.done) {
-      const steps = planOutput.result.steps ?? [];
+      const steps = this.context.plan.length ? this.context.plan : (planOutput.result.steps ?? []);
       const missingPlan = planOutput.result.web_task === true && steps.length === 0;
       const invalidStatus = steps.some(step => !['completed','skipped'].includes(step.status));
       const missingEvidence = planOutput.result.web_task && steps.some(step => step.status === 'completed' && step.evidenceIds.length === 0);
