@@ -570,28 +570,22 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 }
 
 // Update subscribeToExecutorEvents to use port
-function subscribeToExecutorEvents(executor: Executor): () => void {
-  // Clear previous event listeners to prevent multiple subscriptions
+function subscribeToExecutorEvents(_executor: Executor): () => void {
+  const runId = runController.getRunId();
+  if (!runId) return () => undefined;
   if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
-  uiExecutorUnsubscribe = executor.subscribeExecutionEvents(async event => {
+  uiExecutorUnsubscribe = runController.subscribe(async (event, sequence) => {
+    if (runController.getRunId() !== runId) return;
     try {
-      if (currentPort) {
-        currentPort.postMessage(event);
-      }
+      currentPort?.postMessage({
+        ...event,
+        version: RUNTIME_PROTOCOL_VERSION,
+        sequence,
+        runtimeEvent: true,
+      });
     } catch (error) {
-      logger.error('Failed to send message to side panel:', error);
-    }
-
-    if (
-      event.state === ExecutionState.TASK_OK ||
-      event.state === ExecutionState.TASK_FAIL ||
-      event.state === ExecutionState.TASK_CANCEL
-    ) {
-      uiExecutorUnsubscribe?.();
-      uiExecutorUnsubscribe = null;
-      currentExecutor = null;
-      await runController.clearIfTerminal();
+      logger.error('Failed to send durable task event to side panel:', error);
     }
   });
-  return uiExecutorUnsubscribe ?? (() => undefined);
+  return uiExecutorUnsubscribe;
 }
