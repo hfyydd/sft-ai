@@ -249,10 +249,13 @@ export default class MessageManager {
     const budget = Math.max(1000, this.settings.maxInputTokens - Math.max(512, Math.floor(this.settings.maxInputTokens * 0.08)));
     if (this.history.totalTokens <= budget) return;
 
+    // Preserve the initial system/task contract and the most recent state/result,
+    // but aggressively discard replayable intermediate observations first.
     const protectedStart = Math.min(6, this.history.messages.length);
-    const protectedEnd = Math.min(8, Math.max(0, this.history.messages.length - protectedStart));
-    while (this.history.totalTokens > budget && this.history.messages.length > protectedStart + protectedEnd) {
-      const end = this.history.messages.length - protectedEnd;
+    const protectedEnd = Math.min(2, Math.max(0, this.history.messages.length - protectedStart));
+
+    while (this.history.totalTokens > budget) {
+      const end = Math.max(protectedStart, this.history.messages.length - protectedEnd);
       let removed = false;
       for (let i = protectedStart; i < end; i++) {
         const managed = this.history.messages[i];
@@ -265,7 +268,30 @@ export default class MessageManager {
       if (!removed) break;
     }
 
-    if (this.history.totalTokens > budget) this.cutMessages();
+    if (this.history.totalTokens <= budget) return;
+
+    // There may still be a single oversized current-state message. Trim only its
+    // data-heavy tail while preserving the beginning of the state message.
+    const lastIndex = this.history.messages.length - 1;
+    const last = this.history.messages[lastIndex];
+    if (!last?.message) return;
+    const availableTokens = Math.max(256, budget - (this.history.totalTokens - last.metadata.tokens));
+    const maxChars = Math.max(512, Math.floor(availableTokens * this.settings.estimatedCharactersPerToken));
+    const content = last.message.content;
+
+    if (typeof content === 'string' && content.length > maxChars) {
+      const trimmed = content.slice(0, maxChars) + '\n…[上下文已压缩，可按需重新读取页面证据]';
+      this.history.totalTokens -= last.metadata.tokens;
+      last.message = new HumanMessage({ content: trimmed });
+      last.metadata.tokens = this._countTokens(last.message);
+      this.history.totalTokens += last.metadata.tokens;
+    } else if (this.history.totalTokens > budget) {
+      // Last-resort bounded removal of the oldest non-system entries. Never remove
+      // the first system/task messages here.
+      while (this.history.totalTokens > budget && this.history.messages.length > protectedStart) {
+        this.history.removeMessage(protectedStart);
+      }
+    }
   }
 
   public getEstimatedTokenCount(): number {
