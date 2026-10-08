@@ -7,6 +7,7 @@ import type { EventManager } from './event/manager';
 import { type Actors, type ExecutionState, AgentEvent } from './event/types';
 import { AgentStepHistory } from './history';
 import type { ToolPolicy } from '../services/toolPolicy';
+import type { PlanStep } from '@extension/storage';
 
 export interface AgentOptions {
   maxSteps: number;
@@ -54,6 +55,7 @@ export class AgentContext {
   finalAnswer: string | null;
   taskMemory: TaskMemory;
   toolPolicy?: ToolPolicy;
+  plan: PlanStep[];
 
   constructor(
     taskId: string,
@@ -81,6 +83,7 @@ export class AgentContext {
     this.finalAnswer = null;
     this.taskMemory = new TaskMemory();
     this.toolPolicy = toolPolicy;
+    this.plan = [];
   }
 
   async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {
