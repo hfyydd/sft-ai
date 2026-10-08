@@ -58,7 +58,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     setTimeout(() => {
       if (!pending.has(nonce)) return;
       pending.delete(nonce);
-      resolve(false);
+      if (resolve) resolve(false);
       void taskRunStore.updateStatus(input.runId, 'waiting_user');
       void taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce });
     }, 5 * 60_000 + 100);
@@ -75,8 +75,6 @@ export async function resolveApproval(input: {
   if (!run || run.status !== 'waiting_approval') return false;
 
   const resolve = pending.get(input.nonce);
-  if (!resolve) return false;
-
   const checkpoint = await taskRunStore.getCheckpoint(input.runId);
   const action = checkpoint?.pendingAction;
   if (!action) return false;
@@ -93,7 +91,7 @@ export async function resolveApproval(input: {
     }
   }
 
-  pending.delete(input.nonce);
+  if (resolve) pending.delete(input.nonce);
   const event = await taskRunStore.appendEvent(
     input.runId,
     input.approved ? 'approval.approved' : 'approval.rejected',
@@ -103,7 +101,7 @@ export async function resolveApproval(input: {
   if (input.approved) {
     await clearPending(input.runId, event.sequence, checkpoint);
     await taskRunStore.updateStatus(input.runId, 'running');
-    resolve(true);
+    if (resolve) resolve(true);
   } else {
     await clearPending(input.runId, event.sequence, checkpoint);
     await taskRunStore.updateStatus(input.runId, 'cancelled');
