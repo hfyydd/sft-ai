@@ -39,9 +39,9 @@ const logger = createLogger('Action');
 
 const SENSITIVE_INTENT = /(提交|删除|购买|支付|付款|发送|授权|下载|保存|确认|结算|下单|注销|关闭账号|submit|delete|purchase|pay|checkout|send|authorize|download)/i;
 
-const needsApproval = (toolName:string, intent:string, args:unknown) => {
+const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') => {
   if (toolName === 'close_tab') return true;
-  if (toolName === 'click_element' || toolName === 'send_keys' || toolName === 'select_dropdown_option') return SENSITIVE_INTENT.test(intent);
+  if (toolName === 'click_element' || toolName === 'send_keys' || toolName === 'select_dropdown_option') return SENSITIVE_INTENT.test(intent) || SENSITIVE_INTENT.test(elementText);
   if (toolName === 'input_text') return SENSITIVE_INTENT.test(intent);
   return false;
 };
@@ -270,25 +270,24 @@ export class ActionBuilder {
         const intent = input.intent || t('act_click_start', [input.index.toString()]);
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
-        if (needsApproval('click_element', intent, input)) {
-          const pageForApproval = await this.context.browserContext.getCurrentPage();
-          const approved = await requestApproval({
-            runId: this.context.taskId,
-            toolName: 'click_element',
-            args: input,
-            tabId: pageForApproval.tabId,
-            url: pageForApproval.url(),
-            reason: intent,
-          });
-          if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
-        }
-
         const page = await this.context.browserContext.getCurrentPage();
         const state = await page.getState();
-
         const elementNode = state?.selectorMap.get(input.index);
         if (!elementNode) {
           throw new Error(t('act_errors_elementNotExist', [input.index.toString()]));
+        }
+
+        const elementText = elementNode.getAllTextTillNextClickableElement(3);
+        if (needsApproval('click_element', intent, input, elementText)) {
+          const approved = await requestApproval({
+            runId: this.context.taskId,
+            toolName: 'click_element',
+            args: { ...input, elementText: elementText.slice(0, 500) },
+            tabId: page.tabId,
+            url: page.url(),
+            reason: intent || elementText,
+          });
+          if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
 
         // Check if element is a file uploader
@@ -345,6 +344,10 @@ export class ActionBuilder {
         const elementNode = state?.selectorMap.get(input.index);
         if (!elementNode) {
           throw new Error(t('act_errors_elementNotExist', [input.index.toString()]));
+        }
+        if (needsApproval('input_text', intent, input)) {
+          const approved = await requestApproval({ runId: this.context.taskId, toolName: 'input_text', args: input, tabId: page.tabId, url: page.url(), reason: intent });
+          if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
 
         await page.inputTextElementNode(this.context.options.useVision, elementNode, input.text);
@@ -780,6 +783,10 @@ export class ActionBuilder {
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
       const page = await this.context.browserContext.getCurrentPage();
+      if (needsApproval('send_keys', intent, input)) {
+        const approved = await requestApproval({ runId: this.context.taskId, toolName: 'send_keys', args: input, tabId: page.tabId, url: page.url(), reason: intent || input.keys });
+        if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
+      }
       await page.sendKeys(input.keys);
       const msg = t('act_sendKeys_ok', [input.keys]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
@@ -886,6 +893,11 @@ export class ActionBuilder {
         }
 
         logger.debug(`Attempting to select '${input.text}' using xpath: ${elementNode.xpath}`);
+
+        if (needsApproval('select_dropdown_option', intent, input, elementNode.getAllTextTillNextClickableElement(3))) {
+          const approved = await requestApproval({ runId: this.context.taskId, toolName: 'select_dropdown_option', args: input, tabId: page.tabId, url: page.url(), reason: intent });
+          if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
+        }
 
         try {
           const result = await page.selectDropdownOption(input.index, input.text);
