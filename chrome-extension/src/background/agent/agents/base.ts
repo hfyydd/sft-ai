@@ -157,6 +157,8 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
           ...this.callOptions,
         });
 
+        if (!response) throw new ResponseParseError('LLM returned no response');
+
         logger.debug(`[${this.modelName}] LLM response received:`, {
           hasParsed: !!response.parsed,
           hasRaw: !!response.raw,
