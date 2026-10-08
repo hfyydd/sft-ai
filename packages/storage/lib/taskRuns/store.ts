@@ -1,5 +1,5 @@
 import { openTaskRunDatabase } from './database';
-import type { TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnapshot, TaskRunStatus } from './types';
+import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnapshot, TaskRunStatus } from './types';
 
 const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -31,7 +31,7 @@ export class TaskRunStore {
   }
   async saveCheckpoint(cp:TaskCheckpoint){
     const db=await openTaskRunDatabase();
-    await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints'],'readwrite');const runReq=tx.objectStore('runs').get(cp.runId);
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints','evidence'],'readwrite');const runReq=tx.objectStore('runs').get(cp.runId);
       runReq.onsuccess=()=>{const run=runReq.result as TaskRun|undefined;if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
         const ev=tx.objectStore('events').index('runId').openCursor(IDBKeyRange.only(cp.runId),'prev');
         ev.onsuccess=()=>{const latest=ev.result?.value as TaskRunEvent|undefined;if((latest?.sequence??0)<cp.sequence){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});};
@@ -45,6 +45,17 @@ export class TaskRunStore {
   async getSnapshot(runId:string,after=0):Promise<TaskRunSnapshot>{const run=await this.getRun(runId);if(!run)throw new Error('Unknown task run');return{run,checkpoint:await this.getCheckpoint(runId),events:await this.getEvents(runId,after)};}
   async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(c.value);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
   async markInterrupted(){const runs=await this.listActiveRuns();return Promise.all(runs.filter(r=>r.status==='running').map(r=>this.updateStatus(r.id,'interrupted')));}
+  async addEvidence(evidence: EvidenceRecord){
+    const db=await openTaskRunDatabase();
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');tx.objectStore('evidence').put(evidence);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    db.close();
+  }
+  async getEvidence(runId:string,limit=200){
+    const db=await openTaskRunDatabase();
+    const out=await new Promise<EvidenceRecord[]>((resolve,reject)=>{const a:EvidenceRecord[]=[];const q=db.transaction('evidence').objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur||a.length>=limit){resolve(a);return;}a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
+    db.close();return out;
+  }
+
   async removeRun(runId:string){const db=await openTaskRunDatabase();await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints'],'readwrite');tx.objectStore('runs').delete(runId);tx.objectStore('checkpoints').delete(runId);const q=tx.objectStore('events').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const c=q.result;if(c){c.delete();c.continue();}};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();}
 }
 export const taskRunStore=new TaskRunStore();
