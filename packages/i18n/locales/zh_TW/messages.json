@@ -1004,5 +1004,41 @@
   },
   "task_no_evidence": {
     "message": "沒有可持久化的證據，請人工核驗。"
+  },
+  "act_done_start": {
+    "message": "开始结束任务"
+  },
+  "act_done_ok": {
+    "message": "任务已完成"
+  },
+  "act_readPage_start": {
+    "message": "开始读取页面"
+  },
+  "act_readPage_pdf": {
+    "message": "正在读取 PDF"
+  },
+  "act_readPage_vision": {
+    "message": "正在使用视觉读取页面"
+  },
+  "act_readPage_empty": {
+    "message": "页面没有可读取文本"
+  },
+  "act_readPage_vision_ok": {
+    "message": "视觉读取完成"
+  },
+  "exec_navigator_start": {
+    "message": "开始执行浏览器动作"
+  },
+  "exec_navigator_ok": {
+    "message": "浏览器动作执行完成"
+  },
+  "exec_navigator_cancel": {
+    "message": "浏览器动作已取消"
+  },
+  "exec_planner_start": {
+    "message": "开始规划任务"
+  },
+  "exec_planner_fail": {
+    "message": "任务规划失败"
   }
 }
