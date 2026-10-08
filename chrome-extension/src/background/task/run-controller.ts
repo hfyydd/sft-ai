@@ -117,7 +117,11 @@ export class RunController {
         runId: run.id, sequence: persisted.sequence, plan: snapshot.plan, completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
         memory: snapshot.memory, evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id), activeTabId: run.activeTabId,
         pendingWrite: snapshot.pendingWrite,
-      }).catch(error => taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined));
+      }).catch(async error => {
+        await taskRunStore.updateStatus(run.id, 'paused').catch(() => undefined);
+        await taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined);
+        await this.executor?.pause().catch(() => undefined);
+      });
     }
     for (const subscriber of this.subscribers) await subscriber(event);
   }
