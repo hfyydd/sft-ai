@@ -8,8 +8,7 @@ window.buildDomTree = (
     startHighlightIndex: 0,
   },
 ) => {
-  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode } =
-    args;
+  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId } = args;
   // 元素高亮框已按需求移除:无条件不绘制(索引定位不依赖高亮)
   const doHighlightElements = false;
 
@@ -732,8 +731,8 @@ window.buildDomTree = (
 
     // check whether element has event listeners by window.getEventListeners
     try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
+      if (typeof globalThis.getEventListeners === 'function') {
+        const listeners = globalThis.getEventListeners(element);
         const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
         for (const eventType of mouseEvents) {
           if (listeners[eventType] && listeners[eventType].length > 0) {
