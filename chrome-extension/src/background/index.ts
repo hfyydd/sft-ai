@@ -136,7 +136,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       dataBase64: typeof msg.dataBase64 === 'string' ? msg.dataBase64 : undefined,
       error: typeof msg.error === 'string' ? msg.error : undefined,
     })
-      .then(ok => sendResponse({ ok }))
+      .then(async ok => {
+        if (ok && !runController.getExecutor()) {
+          await runController.resume(msg.runId).catch(error => logger.warning('Local PDF read accepted; resume deferred:', error));
+          currentExecutor = runController.getExecutor();
+          if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+        }
+        sendResponse({ ok });
+      })
       .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
     return true;
   }
