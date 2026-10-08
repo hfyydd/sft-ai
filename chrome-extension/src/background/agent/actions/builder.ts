@@ -321,6 +321,12 @@ export class ActionBuilder {
         }
 
         await page.inputTextElementNode(this.context.options.useVision, elementNode, input.text);
+        const verified = await page.verifyInputValue(elementNode, input.text);
+        if (!verified) {
+          const msg = `输入已执行但回读校验失败: index=${input.index}`;
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+          return new ActionResult({ error: msg, includeInMemory: true });
+        }
         const msg = t('act_inputText_ok', [input.text, input.index.toString()]);
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
