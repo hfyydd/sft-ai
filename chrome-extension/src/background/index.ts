@@ -162,6 +162,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg?.type === 'get_latest_run_for_session' && typeof msg.sessionId === 'string') {
+    taskRunStore.listBySession(msg.sessionId)
+      .then(runs => sendResponse({ ok: true, run: runs.sort((a,b) => b.updatedAt - a.updatedAt)[0] }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   if (msg?.type === 'debug_pdf_extract' && msg.url) {
     extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
       .then(r =>
@@ -205,18 +212,23 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_newTask_noTask') });
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
+            const runId = message.runId || message.taskId;
+            const sessionId = message.sessionId || message.taskId || runId;
+            if (!runId) return port.postMessage({ type: 'error', error: t('bg_errors_noTaskId') });
+
             logger.info('new_task', message.tabId, message.task);
             await browserContext.switchTab(message.tabId);
-            const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+            const run = await taskRunStore.getRun(runId).catch(() => undefined);
             if (run) {
-              return port.postMessage({ type: 'error', error: `任务 ${message.taskId} 已存在，请使用继续/恢复操作` });
+              return port.postMessage({ type: 'error', error: `任务 ${runId} 已存在，请使用继续/恢复操作` });
             }
             await runController.createAndStart({
-              runId: message.taskId,
-              sessionId: message.taskId,
+              runId,
+              sessionId,
               goal: message.task,
               tabId: message.tabId,
               skillIds: message.skillIds || [],
+              parentRunId: message.parentRunId,
               createExecutor: async taskRun => {
                 await browserContext.switchTab(message.tabId);
                 return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
@@ -231,8 +243,10 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_noTask') });
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
+            const runId = message.runId || message.taskId;
+            if (!runId) return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
             await browserContext.switchTab(message.tabId);
-            const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+            const run = await taskRunStore.getRun(runId).catch(() => undefined);
             if (!run) return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
 
             await runController.continueWithFollowUp(run.id, message.task);
