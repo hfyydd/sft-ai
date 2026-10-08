@@ -808,12 +808,23 @@ const SidePanel = () => {
       const fullSession = await chatHistoryStore.getSession(sessionId);
       if (fullSession && fullSession.messages.length > 0) {
         setCurrentSessionId(fullSession.id);
+        sessionIdRef.current = fullSession.id;
+        setRunSnapshot(null);
+        setRunEvidence([]);
+        setApprovalAction(null);
+        setUserRequest(null);
         setMessages(fullSession.messages);
         setIsFollowUpMode(false);
         setIsHistoricalSession(true); // Mark this as a historical session
         console.log('history session selected', sessionId);
       }
       setShowHistory(false);
+      if (!portRef.current) setupConnection();
+      else if (portRef.current && sessionIdRef.current) {
+        portRef.current.postMessage({ type: 'get_run_snapshot', runId: sessionIdRef.current, afterSequence: 0 });
+        portRef.current.postMessage({ type: 'subscribe_run', runId: sessionIdRef.current, afterSequence: 0 });
+        portRef.current.postMessage({ type: 'get_run_evidence', runId: sessionIdRef.current, limit: 200 });
+      }
     } catch (error) {
       console.error('Failed to load session:', error);
     }
