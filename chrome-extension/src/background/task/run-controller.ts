@@ -202,13 +202,17 @@ export class RunController {
   async pause() {
     if (!this.executor || !this.activeRunId) throw new Error('No active task');
     await this.executor.pause();
+    await taskRunStore.appendEvent(this.activeRunId, 'task.pause', { reason: 'user_command' });
     await taskRunStore.updateStatus(this.activeRunId, 'paused');
   }
 
   async resume(runId?: string) {
     if (this.executor) {
       await this.executor.resume();
-      if (this.activeRunId) await taskRunStore.updateStatus(this.activeRunId, 'running');
+      if (this.activeRunId) {
+        await taskRunStore.appendEvent(this.activeRunId, 'task.resume', { reason: 'user_command' });
+        await taskRunStore.updateStatus(this.activeRunId, 'running');
+      }
       return;
     }
     if (runId) { await this.recover(runId); return; }
