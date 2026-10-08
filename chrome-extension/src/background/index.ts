@@ -20,6 +20,9 @@ import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
 import { getSkillsSystemInstructions } from './services/skills';
 import { extractPdfTextFromUrl } from './agent/pdf';
+import { buildToolPolicy } from './services/toolPolicy';
+import { taskRunStore } from '@extension/storage';
+import { runController } from './task/run-controller';
 
 const logger = createLogger('background');
 
@@ -55,6 +58,7 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 
 logger.info('background loaded');
+void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
 
 // Initialize analytics
 analytics.init().catch(error => {
@@ -114,11 +118,23 @@ chrome.runtime.onConnect.addListener(port => {
 
             logger.info('new_task', message.tabId, message.task);
             await browserContext.switchTab(message.tabId);
-            currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
-            subscribeToExecutorEvents(currentExecutor);
-
-            const result = await currentExecutor.execute();
-            logger.info('new_task execution result', message.tabId, result);
+            const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+            if (!run) {
+              await runController.createAndStart({
+                runId: message.taskId,
+                sessionId: message.sessionId || message.taskId,
+                goal: message.task,
+                tabId: message.tabId,
+                createExecutor: async taskRun => {
+                  await browserContext.switchTab(message.tabId);
+                  return setupExecutor(taskRun.id, taskRun.goal, browserContext);
+                },
+              });
+            } else {
+              await runController.recover(run.id);
+            }
+            currentExecutor = runController.getExecutor();
+            if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
             break;
           }
 
@@ -275,10 +291,9 @@ chrome.runtime.onConnect.addListener(port => {
     });
 
     port.onDisconnect.addListener(() => {
-      // this event is also triggered when the side panel is closed, so we need to cancel the task
+      // Closing the Side Panel only disconnects the UI. The durable task continues.
       console.log('Side panel disconnected');
       currentPort = null;
-      currentExecutor?.cancel();
     });
   }
 });
@@ -352,6 +367,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
       planningInterval: generalSettings.planningInterval,
     },
     generalSettings: generalSettings,
+    toolPolicy: await buildToolPolicy(),
   });
 
   return executor;
