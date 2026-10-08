@@ -15,7 +15,8 @@ export async function requestApproval(input:{runId:string;toolName:string;args:u
   const parameterHash=await hash(argsSummary);
   const action:PendingAction={runId:input.runId,toolName:input.toolName,argsSummary,input.tabId,url:input.url,expiresAt:Date.now()+5*60_000,nonce,parameterHash};
   await taskRunStore.updateStatus(input.runId,'waiting_approval');
-  await taskRunStore.appendEvent(input.runId,'approval.requested',{...action,reason:input.reason});
+  const event=await taskRunStore.appendEvent(input.runId,'approval.requested',{...action,reason:input.reason});
+  await taskRunStore.saveCheckpoint({runId:input.runId,sequence:event.sequence,plan:[],completedStepIds:[],memory:[],evidenceIds:[],activeTabId:input.tabId,pendingAction:action});
   return new Promise<boolean>(resolve=>pending.set(nonce,resolve));
 }
 
