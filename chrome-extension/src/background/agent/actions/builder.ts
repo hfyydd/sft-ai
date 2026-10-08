@@ -333,14 +333,26 @@ export class ActionBuilder {
         }
 
         const elementText = elementNode.getAllTextTillNextClickableElement(3);
-        if (needsApproval('click_element', intent, input, elementText)) {
+        const href = elementNode.attributes?.href || '';
+        let linkedUrl = '';
+        let crossDomainLink = false;
+        if (href) {
+          try {
+            linkedUrl = new URL(href, page.url()).href;
+            crossDomainLink = new URL(linkedUrl).hostname !== new URL(page.url()).hostname;
+          } catch {
+            crossDomainLink = false;
+          }
+        }
+        if (needsApproval('click_element', intent, input, elementText) || crossDomainLink) {
           const approved = await requestApproval({
             runId: this.context.taskId,
             toolName: 'click_element',
-            args: { ...input, elementText: elementText.slice(0, 500) },
+            args: { ...input, elementText: elementText.slice(0, 500), linkedUrl },
+
             tabId: page.tabId,
             url: page.url(),
-            reason: intent || elementText,
+            reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : intent || elementText,
           });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
