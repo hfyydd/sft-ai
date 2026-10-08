@@ -323,7 +323,7 @@ chrome.runtime.onConnect.addListener(port => {
 
           case 'cancel_task': {
             try {
-              await runController.cancel();
+              await runController.cancel(message.taskId);
               currentExecutor = null;
               return port.postMessage({ type: 'success' });
             } catch (error) {
@@ -344,7 +344,7 @@ chrome.runtime.onConnect.addListener(port => {
 
           case 'pause_task': {
             try {
-              await runController.pause();
+              await runController.pause(message.taskId);
               return port.postMessage({ type: 'success' });
             } catch (error) {
               return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_errors_noRunningTask') });
