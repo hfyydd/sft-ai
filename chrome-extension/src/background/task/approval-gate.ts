@@ -52,7 +52,11 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
       nonce: existing.approvedAction.nonce,
       parameterHash,
     });
-    await clearPending(input.runId, consumed.sequence, existing, { pendingAction: undefined, approvedAction: undefined });
+    await clearPending(input.runId, consumed.sequence, existing, {
+      pendingAction: undefined,
+      approvedAction: undefined,
+      pendingWrite: existing.pendingWrite,
+    });
     await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
     return true;
   }
@@ -83,7 +87,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     activeTabId: input.tabId,
     navigatorState: current?.navigatorState,
     pendingAction: action,
-    pendingWrite: undefined,
+    pendingWrite: current?.pendingWrite,
     approvedAction: current?.approvedAction,
   });
 
@@ -113,7 +117,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     await clearPending(input.runId, event.sequence, checkpoint, {
       pendingAction: undefined,
       approvedAction: action,
-      pendingWrite: undefined,
+      pendingWrite: checkpoint.pendingWrite,
     });
   }
   return true;
@@ -159,7 +163,7 @@ export async function resolveApproval(input: {
       pendingAction: undefined,
       approvedAction: action,
     });
-    await taskRunStore.updateStatus(input.runId, resolve ? 'running' : 'interrupted');
+    await taskRunStore.updateStatus(input.runId, 'running');
     resolve?.(true);
   } else {
     await clearPending(input.runId, event.sequence, checkpoint, { pendingAction: undefined, approvedAction: undefined });
