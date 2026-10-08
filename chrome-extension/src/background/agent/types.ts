@@ -139,12 +139,7 @@ export class AgentContext {
         sequence: event.sequence,
         plan: checkpoint?.plan ?? this.plan,
         completedStepIds: checkpoint?.completedStepIds ?? this.plan.filter(step => step.status === 'completed').map(step => step.id),
-        memory: checkpoint?.memory ?? this.taskMemory.getFacts().map((content, i) => ({
-          id: this.taskId + ':memory:' + i,
-          content,
-          evidenceIds: [],
-          createdAt: Date.now(),
-        })),
+        memory: checkpoint?.memory ?? this.taskMemory.getFacts(),
         evidenceIds: checkpoint?.evidenceIds ?? [],
         activeTabId: tabId ?? checkpoint?.activeTabId,
         navigatorState: checkpoint?.navigatorState,
