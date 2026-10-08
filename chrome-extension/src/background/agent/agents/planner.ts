@@ -17,6 +17,7 @@ import {
   RequestCancelledError,
 } from './errors';
 import { filterExternalContent } from '../messages/utils';
+import { normalizePlanSteps, validatePlanSteps } from '../plan';
 const logger = createLogger('PlannerAgent');
 
 // Define Zod schema for planner output
@@ -103,12 +104,8 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       let challenges = filterExternalContent(modelOutput.challenges);
       let reasoning = filterExternalContent(modelOutput.reasoning);
 
-      const steps = modelOutput.steps ?? [];
-      const uniqueIds = new Set<string>();
-      for (const step of steps) {
-        if (uniqueIds.has(step.id)) throw new Error(`Duplicate plan step id: ${step.id}`);
-        uniqueIds.add(step.id);
-      }
+      const steps = normalizePlanSteps(modelOutput.steps, modelOutput.next_steps);
+      validatePlanSteps(steps);
       const cleanedPlan: PlannerOutput = {
         ...modelOutput,
         steps,
