@@ -1120,6 +1120,15 @@ export default class Page {
     return null;
   }
 
+  async getObservationSignature(): Promise<string> {
+    const url = this.url();
+    if (!this._puppeteerPage) return url;
+    const text = await this._puppeteerPage.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
+    const data = new TextEncoder().encode(url + '\n' + text);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, '0')).join('');
+  }
+
   async verifyClickEffect(index: number, initialUrl: string): Promise<boolean> {
     const currentUrl = this.url();
     if (currentUrl !== initialUrl) return true;
