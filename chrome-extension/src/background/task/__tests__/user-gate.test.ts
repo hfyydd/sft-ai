@@ -13,6 +13,8 @@ describe('user intervention contract', () => {
     expect(request.expiresAt).toBeGreaterThan(Date.now());
   });
   it('treats a different nonce as a different request', () => {
-    expect('nonce-a' === 'nonce-b').toBe(false);
+    const a = 'nonce-a';
+    const b: string = 'nonce-b';
+    expect(a === b).toBe(false);
   });
 });
