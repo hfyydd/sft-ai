@@ -223,11 +223,21 @@ export class ActionBuilder {
   private async persistEvidence(source:'dom'|'pdf'|'vision'|'cache', tabId:number, url:string, title:string, content:string, pageNumber?:number){
     const evidenceId = crypto.randomUUID();
     try {
+      const boundedContent = content.length > 50000 ? content.slice(0,50000) + '\n…[证据已截断]' : content;
       await taskRunStore.addEvidence({
         id: evidenceId,
         runId: this.context.taskId,
         source, tabId, url, title, capturedAt: Date.now(), pageNumber,
-        content: content.length > 50000 ? content.slice(0,50000) + '\n…[证据已截断]' : content,
+        content: boundedContent,
+      });
+      await taskRunStore.appendEvent(this.context.taskId, 'evidence.created', {
+        evidenceId,
+        source,
+        tabId,
+        url,
+        title,
+        pageNumber,
+        contentChars: boundedContent.length,
       });
       const running = this.context.plan.find(step => step.status === 'running');
       if (running) running.evidenceIds = [...new Set([...running.evidenceIds, evidenceId])];
