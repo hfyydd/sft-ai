@@ -365,7 +365,7 @@ export class ActionBuilder {
       const evidence = await taskRunStore.getEvidence(this.context.taskId, 500).catch(() => []);
       const knownEvidence = new Set(evidence.map(item => item.id));
       for (const field of ordered) {
-        const invalidEvidence = (field.evidenceIds ?? []).filter(id => !knownEvidence.has(id));
+        const invalidEvidence = (field.evidenceIds ?? []).filter((id: string) => !knownEvidence.has(id));
         if (invalidEvidence.length) {
           failures.push('字段 index=' + field.index + ' 引用了不存在的证据: ' + invalidEvidence.join(','));
           continue;
