@@ -4,6 +4,14 @@ import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnap
 const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
 const normalizeRun = (run: TaskRun | undefined): TaskRun | undefined => run ? { ...run, skillIds: run.skillIds ?? [], lastEventSequence: run.lastEventSequence ?? 0 } : undefined;
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+export const MAX_EVENT_BYTES_PER_RUN = 2 * 1024 * 1024;
+export const MAX_EVIDENCE_BYTES_PER_RUN = 5 * 1024 * 1024;
+export function nextTaskRunEventSequence(run: TaskRun): number {
+  return (run.lastEventSequence ?? 0) + 1;
+}
+export function checkpointIsValid(run: TaskRun, sequence: number): boolean {
+  return (run.lastEventSequence ?? 0) >= sequence;
+}
 
 export class TaskRunStore {
   async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number;skillIds?:string[]}):Promise<TaskRun>{
@@ -31,7 +39,7 @@ export class TaskRunStore {
       req.onsuccess=()=>{
         const run=normalizeRun(req.result as TaskRun|undefined);
         if(!run){tx.abort();return;}
-        const sequence=(run.lastEventSequence??0)+1;
+        const sequence=nextTaskRunEventSequence(run);
         created={id:makeId(),runId,sequence,type,timestamp:Date.now(),payload};
         events.add(created);
         runs.put({...run,lastEventSequence:sequence,updatedAt:Date.now()});
@@ -48,7 +56,7 @@ export class TaskRunStore {
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints','evidence'],'readwrite');const runReq=tx.objectStore('runs').get(cp.runId);
       runReq.onsuccess=()=>{const run=runReq.result as TaskRun|undefined;if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
-        if((run.lastEventSequence??0)<cp.sequence){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});
+        if(!checkpointIsValid(run,cp.sequence)){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});
       };tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
     });db.close();
   }
@@ -85,7 +93,15 @@ export class TaskRunStore {
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');tx.objectStore('evidence').put(evidence);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close();
+    await this.trimEventsBytes(runId);
   }
+  private async trimEventsBytes(runId:string){
+    const db=await openTaskRunDatabase();
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('events','readwrite');const idx=tx.objectStore('events').index('runId');const rows:Array<{key:IDBValidKey;bytes:number}>=[];let total=0;
+      const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){const excess=Math.max(0,total-MAX_EVENT_BYTES_PER_RUN);let removed=0;for(const row of rows){if(removed>=excess)break;tx.objectStore('events').delete(row.key);removed+=row.bytes;}return;}const value=cur.value as TaskRunEvent;const bytes=new TextEncoder().encode(JSON.stringify(value.payload)).byteLength+128;rows.push({key:cur.primaryKey as IDBValidKey,bytes});total+=bytes;cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    db.close();
+  }
+
   async getEvidence(runId:string,limit=200){
     const db=await openTaskRunDatabase();
     const out=await new Promise<EvidenceRecord[]>((resolve,reject)=>{const a:EvidenceRecord[]=[];const q=db.transaction('evidence').objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur||a.length>=limit){resolve(a);return;}a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
@@ -130,6 +146,13 @@ export class TaskRunStore {
   private async trimEvents(runId:string,maxItems:number){
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('events','readwrite');const idx=tx.objectStore('events').index('runId');const values:IDBValidKey[]=[];const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){const excess=Math.max(0,values.length-maxItems);for(let i=0;i<excess;i++)tx.objectStore('events').delete(values[i]);return;}values.push(cur.primaryKey as IDBValidKey);cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    db.close();
+  }
+
+  private async trimEvidenceBytes(runId:string){
+    const db=await openTaskRunDatabase();
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');const idx=tx.objectStore('evidence').index('runId');const rows:Array<{key:IDBValidKey;bytes:number}>=[];let total=0;
+      const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){let excess=Math.max(0,total-MAX_EVIDENCE_BYTES_PER_RUN);for(const row of rows){if(excess<=0)break;tx.objectStore('evidence').delete(row.key);excess-=row.bytes;}return;}const value=cur.value as EvidenceRecord;const bytes=new TextEncoder().encode(value.content).byteLength+512;rows.push({key:cur.primaryKey as IDBValidKey,bytes});total+=bytes;cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close();
   }
 
