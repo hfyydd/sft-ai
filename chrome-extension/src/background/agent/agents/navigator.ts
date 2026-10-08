@@ -396,6 +396,11 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         const policy = this.context.toolPolicy?.decide(actionName);
         if (policy && !policy.allowed) {
           const denied = `Tool ${actionName} blocked by policy: ${policy.reason}`;
+          await taskRunStore.appendEvent(this.context.taskId, 'policy.tool_denied', {
+            toolName: actionName,
+            reason: policy.reason,
+            step: this.context.nSteps,
+          }).catch(() => undefined);
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, denied);
           results.push(new ActionResult({ error: denied, includeInMemory: true }));
           continue;
