@@ -271,10 +271,11 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                         checked={skill.enabled}
                         onChange={e => void handleToggle(skill, e.target.checked)}
                         className="sr-only"
+                        aria-label={`启用技能：${skill.name}`}
                         id={`skill-enabled-${skill.id}`}
                       />
-                      <label
-                        htmlFor={`skill-enabled-${skill.id}`}
+                      <span
+                        aria-hidden="true"
                         className={`block h-6 cursor-pointer overflow-hidden rounded-full ${
                           skill.enabled ? 'bg-blue-500' : isDarkMode ? 'bg-gray-600' : 'bg-gray-300'
                         }`}>
@@ -283,7 +284,7 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                             skill.enabled ? 'translate-x-6' : 'translate-x-0'
                           }`}
                         />
-                      </label>
+                      </span>
                     </div>
                     <button
                       className={`rounded p-2 hover:bg-sky-500/20`}
