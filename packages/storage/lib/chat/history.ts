@@ -162,7 +162,7 @@ export function createChatHistoryStorage(): ChatHistoryStorage {
       const messagesStorage = getSessionMessagesStorage(sessionId);
       await messagesStorage.set([]);
       // Keep durable task runtime data in sync with chat history deletion.
-      const runs = await taskRunStore.listActiveRuns();
+      const runs = await taskRunStore.listBySession(sessionId);
       await Promise.all(runs.filter(run => run.sessionId === sessionId).map(run => taskRunStore.removeRun(run.id)));
     },
 
