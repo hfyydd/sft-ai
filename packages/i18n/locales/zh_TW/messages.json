@@ -1040,5 +1040,7 @@
   },
   "exec_planner_fail": {
     "message": "任务规划失败"
-  }
+  },
+  "act_readPage_ok": {"message":"已读取页面文本"},
+  "act_readPage_fail": {"message":"读取页面文本失败:"}
 }
