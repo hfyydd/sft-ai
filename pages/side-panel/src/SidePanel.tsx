@@ -63,6 +63,10 @@ const SidePanel = () => {
         setApprovalAction(msg.action);
         return false;
       }
+      if (msg?.type === 'user_intervention_required') {
+        setUserRequest(msg.request);
+        return false;
+      }
       if (msg?.type !== 'read_file_arraybuffer' || !msg.path || !msg.path.startsWith('file://')) return false;
       if (_sender.id !== chrome.runtime.id) {
         sendResponse({ ok: false, requestId: msg.requestId, error: '拒绝非扩展内部文件请求' });
