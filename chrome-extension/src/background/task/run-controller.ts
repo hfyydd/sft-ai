@@ -112,6 +112,7 @@ export class RunController {
       await taskRunStore.saveCheckpoint({
         runId: run.id, sequence: persisted.sequence, plan: snapshot.plan, completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
         memory: snapshot.memory, evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id), activeTabId: run.activeTabId,
+        pendingWrite: snapshot.pendingWrite,
       }).catch(error => taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined));
     }
     for (const subscriber of this.subscribers) await subscriber(event);
@@ -224,6 +225,14 @@ export class RunController {
     }
     if (checkpoint?.pendingUserRequest) {
       throw new Error('Task is waiting for user input; answer the persisted question before recovery');
+    }
+    if (checkpoint?.pendingWrite) {
+      await taskRunStore.appendEvent(run.id, 'runtime.recovery_needs_verification', {
+        toolName: checkpoint.pendingWrite.toolName,
+        tabId: checkpoint.pendingWrite.tabId,
+        url: checkpoint.pendingWrite.url,
+      });
+      throw new Error('Task has an unknown browser write; verify its postcondition before recovery');
     }
     await this.assertRecoverableTab(run.activeTabId ?? -1);
     return this.start({ ...run, status: 'running' });
