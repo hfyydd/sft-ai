@@ -113,6 +113,7 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
             logger.info('new_task', message.tabId, message.task);
+            await browserContext.switchTab(message.tabId);
             currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
             subscribeToExecutorEvents(currentExecutor);
 
@@ -126,6 +127,7 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
             logger.info('follow_up_task', message.tabId, message.task);
+            await browserContext.switchTab(message.tabId);
 
             // If executor exists, add follow-up task
             if (currentExecutor) {
@@ -335,17 +337,8 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
     displayHighlights: false, // 元素高亮框已按需求移除
   });
 
-  // 给规划器提供"用户当前正在看的页面"上下文,避免对页面相关问题拒答
-  let taskWithPage = task;
-  try {
-    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (activeTab?.url && /^https?:/i.test(activeTab.url)) {
-      taskWithPage =
-        task + '\n\n[用户当前正在浏览的页面:' + (activeTab.title || '(无标题)') + '(' + activeTab.url + ')]';
-    }
-  } catch (e) {
-    logger.warn('Failed to get active tab for task context:', e);
-  }
+  // 任务标签页由 new_task/follow_up_task/replay 在创建 Executor 前显式绑定。
+  // 不再静默读取活动标签页，避免任务在用户切换窗口后漂移到另一页面。
 
   const executor = new Executor(taskWithPage, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
