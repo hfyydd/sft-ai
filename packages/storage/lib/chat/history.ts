@@ -75,6 +75,7 @@ export function createChatHistoryStorage(): ChatHistoryStorage {
         await messagesStorage.set([]);
       }
       await chatSessionsMetaStorage.set([]);
+      await taskRunStore.removeAllRuns();
     },
 
     // Get session metadata without messages (for UI listing)
