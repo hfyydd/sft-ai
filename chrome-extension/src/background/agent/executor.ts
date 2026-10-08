@@ -108,11 +108,18 @@ export class Executor {
   getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
 
   getRuntimeSnapshot() {
+    const navigatorInfo = this.navigator.getRuntimeInfo();
+    const plannerInfo = this.planner.getRuntimeInfo();
     return {
       memory: this.context.taskMemory.getFacts(),
       plan: this.getPlan(),
       step: this.context.nSteps,
       finalAnswer: this.context.finalAnswer,
+      startedAt: this.context.startedAt,
+      durationMs: Date.now() - this.context.startedAt,
+      estimatedInputTokens: this.context.messageManager.getEstimatedTokenCount(),
+      navigator: navigatorInfo,
+      planner: plannerInfo,
     };
   }
 
@@ -168,6 +175,7 @@ export class Executor {
     const allowedMaxSteps = this.context.options.maxSteps;
 
     try {
+      this.context.startedAt = Date.now();
       this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_START, this.context.taskId);
 
       // Track task start
