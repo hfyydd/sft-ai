@@ -710,7 +710,7 @@ export class ActionBuilder {
           return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
         }
         const okMsg = t('act_readPage_vision_ok');
-        await this.persistEvidence('vision', page.tabId, tabUrl, tabInfo.title || '', text);
+        await this.persistEvidence('vision', page.tabId, tabUrl, tabInfo.title || '', text, tabUrl.toLowerCase().endsWith('.pdf') ? input.pageStart : undefined);
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
         return new ActionResult({
           extractedContent: formatPageEvidence(
