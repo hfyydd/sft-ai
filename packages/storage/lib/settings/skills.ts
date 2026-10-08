@@ -5,8 +5,8 @@ import type { BaseStorage } from '../base/types';
 /**
  * Skill = a reusable instruction module injected into the agents' system prompts.
  * - 'always' skills are appended to every task's system prompt.
- * - 'manual' skills are stored for per-conversation selection (UI support planned).
- * - allowedTools reserves a per-skill tool whitelist for the executor (enforcement planned).
+ * - 'manual' skills are available for per-session selection from the Side Panel.
+ * - allowedTools is enforced at the Navigator execution boundary.
  */
 export type SkillMode = 'always' | 'manual';
 
@@ -130,9 +130,9 @@ export const skillStore: SkillStorage = {
   async upsertSkill(skill) {
     const current = (await storage.get())?.skills ?? [];
     const idx = current.findIndex(s => s.id === skill.id);
-    const next: Skill = { ...skill, updatedAt: Date.now() };
+    const next: Skill = { ...skill, updatedAt: Date.now(), version: Number.isInteger(skill.version) && skill.version > 0 ? skill.version : 1 };
     if (idx >= 0) {
-      current[idx] = next;
+      current[idx] = { ...next, version: (current[idx].version ?? 1) + 1 };
     } else {
       current.push({ ...next, createdAt: next.createdAt || Date.now() });
     }
