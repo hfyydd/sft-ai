@@ -11,54 +11,7 @@ import { ChatDeepSeek } from '@langchain/deepseek';
 
 const maxTokens = 1024 * 4;
 
-// Custom ChatLlama class to handle Llama API response format
-class ChatLlama extends ChatOpenAI {
-  constructor(args: any) {
-    super(args);
-  }
-
-  // Override the completionWithRetry method to intercept and transform the response
-  async completionWithRetry(request: any, options?: any): Promise<any> {
-    try {
-      // Make the request using the parent's implementation
-      const response = await super.completionWithRetry(request, options);
-
-      // Check if this is a Llama API response format
-      if (response?.completion_message?.content?.text) {
-        // Transform Llama API response to OpenAI format
-        const transformedResponse = {
-          id: response.id || 'llama-response',
-          object: 'chat.completion',
-          created: Date.now(),
-          model: request.model,
-          choices: [
-            {
-              index: 0,
-              message: {
-                role: 'assistant',
-                content: response.completion_message.content.text,
-              },
-              finish_reason: response.completion_message.stop_reason || 'stop',
-            },
-          ],
-          usage: {
-            prompt_tokens: response.metrics?.find((m: any) => m.metric === 'num_prompt_tokens')?.value || 0,
-            completion_tokens: response.metrics?.find((m: any) => m.metric === 'num_completion_tokens')?.value || 0,
-            total_tokens: response.metrics?.find((m: any) => m.metric === 'num_total_tokens')?.value || 0,
-          },
-        };
-
-        return transformedResponse;
-      }
-
-      return response;
-    } catch (error: any) {
-      console.error(`[ChatLlama] Error during API call:`, error);
-      throw error;
-    }
-  }
-}
-
+// Llama-compatible providers use the same OpenAI-compatible chat protocol.
 // O series models or GPT-5 models that support reasoning
 function isOpenAIReasoningModel(modelName: string): boolean {
   let modelNameWithoutProvider = modelName;
@@ -361,29 +314,7 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
       });
     }
     case ProviderTypeEnum.Llama: {
-      // Llama API has a different response format, use custom ChatLlama class
-      const args: {
-        model: string;
-        apiKey?: string;
-        configuration?: Record<string, unknown>;
-        topP?: number;
-        temperature?: number;
-        maxTokens?: number;
-      } = {
-        model: modelConfig.modelName,
-        apiKey: providerConfig.apiKey,
-        topP: (modelConfig.parameters?.topP ?? 0.1) as number,
-        temperature: (modelConfig.parameters?.temperature ?? 0.1) as number,
-        maxTokens,
-      };
-
-      const configuration: Record<string, unknown> = {};
-      if (providerConfig.baseUrl) {
-        configuration.baseURL = providerConfig.baseUrl;
-      }
-      args.configuration = configuration;
-
-      return new ChatLlama(args);
+      return createOpenAIChatModel(providerConfig, modelConfig, undefined);
     }
     default: {
       // by default, we think it's a openai-compatible provider
