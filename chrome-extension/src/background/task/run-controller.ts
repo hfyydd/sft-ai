@@ -150,7 +150,7 @@ export class RunController {
         pendingUserRequest: currentCheckpoint?.pendingUserRequest,
         pendingFileRead: currentCheckpoint?.pendingFileRead,
         nSteps: snapshot.step,
-        replanCount: snapshot.planner?.replanCount ?? undefined,
+        replanCount: (this.executor as Executor).getRuntimeSnapshot().replanCount,
         startedAt: snapshot.startedAt,
         finalAnswer: snapshot.finalAnswer,
       }).catch(async error => {
