@@ -16,6 +16,7 @@ export class RunController {
   private subscribers = new Set<(event: AgentEvent) => Promise<void> | void>();
   private starting = false;
   private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
+  private executorSubscription: (() => void) | null = null;
 
   configure(factory: RunControllerFactory, verifier?: (run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) {
     this.factory = factory;
@@ -63,7 +64,8 @@ export class RunController {
       this.activeRunId = run.id;
       this.executor = await this.factory(run);
       await this.hydrateExecutor(run);
-      this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+      this.executorSubscription?.();
+      this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
       await taskRunStore.updateStatus(run.id, 'running');
       void this.executeDetached(run);
       return run;
@@ -143,10 +145,12 @@ export class RunController {
       await this.hydrateExecutor(run);
     }
 
+    if (run.status === 'paused') await this.executor.resume();
     this.executor.addFollowUpTask(task);
     await taskRunStore.appendEvent(run.id, 'task.follow_up', { task });
     await taskRunStore.updateStatus(run.id, 'running');
-    this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    this.executorSubscription?.();
+    this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
     void this.executeDetached(run);
   }
 
@@ -157,7 +161,8 @@ export class RunController {
     await this.assertRecoverableTab(tabId);
     this.activeRunId = run.id;
     this.executor = await this.factory(run);
-    this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    this.executorSubscription?.();
+    this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
     await taskRunStore.updateStatus(run.id, 'running');
     try {
       void this.executeReplayDetached(run, historySessionId);
@@ -273,6 +278,8 @@ export class RunController {
     if (!this.activeRunId) return;
     const run = await taskRunStore.getRun(this.activeRunId);
     if (run && TERMINAL.has(run.status)) {
+      this.executorSubscription?.();
+      this.executorSubscription = null;
       this.executor = null;
       this.activeRunId = null;
     }
