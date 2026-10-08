@@ -1156,6 +1156,27 @@ const SidePanel = () => {
                     </div>
                   ) : (
                     <>
+                      {runSnapshot?.checkpoint?.plan?.length > 0 && (
+                        <TaskPlanPanel steps={runSnapshot.checkpoint.plan} />
+                      )}
+                      {runSnapshot?.events?.length > 0 && (
+                        <TaskTimeline
+                          events={runSnapshot.events}
+                          hasMore={timelineHasMore}
+                          onLoadMore={() => {
+                            const first = runSnapshot.events[0]?.sequence;
+                            if (first && first > 1) {
+                              portRef.current?.postMessage({
+                                type: 'get_run_events_before',
+                                runId: runSnapshot.run.id,
+                                beforeSequence: first,
+                                limit: 100,
+                              });
+                            }
+                          }}
+                        />
+                      )}
+                      {runEvidence.length > 0 && <EvidenceList items={runEvidence} />}
                       <MessageList messages={messages} isDarkMode={isDarkMode} running={showStopButton} />
                       <div ref={messagesEndRef} />
                     </>
