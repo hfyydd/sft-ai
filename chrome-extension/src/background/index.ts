@@ -333,7 +333,7 @@ chrome.runtime.onConnect.addListener(port => {
                   actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload ? (event.payload as any).actor : 'system',
                   state: event.type,
                   data: event.payload && typeof event.payload === 'object' && 'data' in event.payload ? (event.payload as any).data : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
-                  timestamp: event.timestamp,
+
                 },
               });
             }
