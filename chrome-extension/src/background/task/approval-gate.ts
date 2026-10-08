@@ -17,6 +17,7 @@ export async function requestApproval(input:{runId:string;toolName:string;args:u
   await taskRunStore.updateStatus(input.runId,'waiting_approval');
   const event=await taskRunStore.appendEvent(input.runId,'approval.requested',{...action,reason:input.reason});
   await taskRunStore.saveCheckpoint({runId:input.runId,sequence:event.sequence,plan:[],completedStepIds:[],memory:[],evidenceIds:[],activeTabId:input.tabId,pendingAction:action});
+  void chrome.runtime.sendMessage({type:'approval_required',action}).catch(()=>undefined);
   return new Promise<boolean>(resolve=>pending.set(nonce,resolve));
 }
 
