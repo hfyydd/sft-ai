@@ -77,6 +77,7 @@ analyticsSettingsStore.subscribe(() => {
   analytics.updateSettings().catch(error => {
     logger.error('Failed to update analytics settings:', error);
   });
+  return uiExecutorUnsubscribe;
 });
 
 // Listen for simple messages (e.g., from options page)
@@ -435,7 +436,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 }
 
 // Update subscribeToExecutorEvents to use port
-async function subscribeToExecutorEvents(executor: Executor) {
+function subscribeToExecutorEvents(executor: Executor): () => void {
   // Clear previous event listeners to prevent multiple subscriptions
   if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
   uiExecutorUnsubscribe = executor.subscribeExecutionEvents(async event => {
