@@ -35,3 +35,17 @@ export const ACTOR_PROFILES = {
     iconBackground: '#795548',
   },
 } as const;
+
+export interface RunCommandMessage {
+  type: 'get_run_snapshot' | 'subscribe_run' | 'get_run_evidence' | 'pause_task' | 'resume_task' | 'cancel_task';
+  runId?: string;
+  afterSequence?: number;
+  limit?: number;
+}
+export interface ApprovalCommandMessage {
+  type: 'approve_action' | 'reject_action';
+  runId: string;
+  nonce: string;
+  parameterHash: string;
+}
+
