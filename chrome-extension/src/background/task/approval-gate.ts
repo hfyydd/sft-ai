@@ -59,8 +59,12 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
       if (!pending.has(nonce)) return;
       pending.delete(nonce);
       if (resolve) resolve(false);
-      void taskRunStore.updateStatus(input.runId, 'waiting_user');
-      void taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce });
+      const checkpoint = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
+      const event = await taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce });
+      if (checkpoint) {
+        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined }).catch(() => undefined);
+      }
+      void taskRunStore.updateStatus(input.runId, 'cancelled');
     }, 5 * 60_000 + 100);
   });
 }
