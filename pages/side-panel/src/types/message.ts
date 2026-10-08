@@ -29,6 +29,7 @@ export const ACTOR_PROFILES = {
     icon: 'icons/manager.svg',
     iconBackground: '#9C27B0',
   },
+  verifier: { name: '完成核验', icon: 'icons/validator.svg', iconBackground: '#EC407A' },
   evaluator: {
     name: '评估',
     icon: 'icons/evaluator.svg',
