@@ -384,6 +384,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           return results;
         }
 
+        const policy = this.context.toolPolicy?.decide(actionName);
+        if (policy && !policy.allowed) {
+          const denied = `Tool ${actionName} blocked by policy: ${policy.reason}`;
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, denied);
+          results.push(new ActionResult({ error: denied, includeInMemory: true }));
+          continue;
+        }
+
         const actionInstance = this.actionRegistry.getAction(actionName);
         if (actionInstance === undefined) {
           throw new Error(`Action ${actionName} not exists`);
