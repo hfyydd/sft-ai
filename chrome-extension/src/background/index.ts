@@ -77,7 +77,6 @@ analyticsSettingsStore.subscribe(() => {
   analytics.updateSettings().catch(error => {
     logger.error('Failed to update analytics settings:', error);
   });
-  return uiExecutorUnsubscribe;
 });
 
 // Listen for simple messages (e.g., from options page)
