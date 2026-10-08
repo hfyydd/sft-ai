@@ -424,13 +424,27 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
 
         if (PENDING_WRITE_TOOLS.has(actionName)) {
-          this.context.pendingWrite = {
+          const pendingWrite: NonNullable<typeof this.context.pendingWrite> = {
             toolName: actionName,
             parameterHash: await hashActionArgs(actionArgs),
             tabId: browserState.tabId,
             url: browserState.url,
             startedAt: Date.now(),
           };
+          if (actionArgs && typeof actionArgs === 'object' && 'index' in actionArgs && typeof actionArgs.index === 'number') {
+            pendingWrite.index = actionArgs.index;
+          }
+          if (
+            actionArgs &&
+            typeof actionArgs === 'object' &&
+            'text' in actionArgs &&
+            actionArgs.text !== null &&
+            typeof actionArgs.text === 'string' &&
+            ['input_text', 'select_dropdown_option'].includes(actionName)
+          ) {
+            pendingWrite.expectedValueHash = await hashActionArgs(actionArgs.text);
+          }
+          this.context.pendingWrite = pendingWrite;
         }
 
         const result = await actionInstance.call(actionArgs);
