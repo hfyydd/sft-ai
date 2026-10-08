@@ -20,6 +20,7 @@ export interface AgentOptions {
   useVisionForPlanner: boolean;
   includeAttributes: string[];
   planningInterval: number;
+  maxReplans: number;
 }
 
 export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
@@ -33,6 +34,7 @@ export const DEFAULT_AGENT_OPTIONS: AgentOptions = {
   useVisionForPlanner: true,
   includeAttributes: DEFAULT_INCLUDE_ATTRIBUTES,
   planningInterval: 3,
+  maxReplans: 30,
 };
 
 import { TaskMemory } from './memory';
@@ -47,6 +49,7 @@ export class AgentContext {
   paused: boolean;
   stopped: boolean;
   consecutiveFailures: number;
+  replanCount: number;
   nSteps: number;
   stepInfo: AgentStepInfo | null;
   actionResults: ActionResult[];
