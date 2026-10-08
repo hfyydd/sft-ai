@@ -18,6 +18,15 @@ const HIGH_IMPACT = new Set([
   'fill_form',
 ]);
 
+export function intersectToolLists(lists: string[][]): string[] {
+  if (!lists.length) return [];
+  let current = new Set(lists[0]);
+  for (const list of lists.slice(1)) {
+    current = new Set([...current].filter(tool => list.includes(tool)));
+  }
+  return [...current];
+}
+
 export class ToolPolicy {
   private readonly allowed: Set<string> | null;
 
@@ -46,6 +55,6 @@ export async function buildToolPolicy(skillIds: string[] = []): Promise<ToolPoli
     .filter((value): value is string[] => Array.isArray(value));
 
   if (!lists.length) return new ToolPolicy();
-  const intersection = lists.reduce((acc, list) => new Set([...acc].filter(tool => list.includes(tool))));
-  return new ToolPolicy(intersection);
+  const intersection = intersectToolLists(lists);
+  return new ToolPolicy(new Set(intersection));
 }
