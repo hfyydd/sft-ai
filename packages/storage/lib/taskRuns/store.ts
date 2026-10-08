@@ -2,6 +2,7 @@ import { openTaskRunDatabase } from './database';
 import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnapshot, TaskRunStatus } from './types';
 
 const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+const normalizeRun = (run: TaskRun | undefined): TaskRun | undefined => run ? { ...run, skillIds: run.skillIds ?? [] } : undefined;
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 export class TaskRunStore {
@@ -11,7 +12,7 @@ export class TaskRunStore {
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').add(run);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close(); return run;
   }
-  async getRun(runId:string){const db=await openTaskRunDatabase();const r=await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId));db.close();return r;}
+  async getRun(runId:string){const db=await openTaskRunDatabase();const r=await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId));db.close();return normalizeRun(r);}
   async updateStatus(runId:string,status:TaskRunStatus,patch:Partial<TaskRun>={}):Promise<TaskRun>{
     const db=await openTaskRunDatabase();const run=await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId));
     if(!run){db.close();throw new Error(`Unknown task run: ${runId}`);}
@@ -45,10 +46,10 @@ export class TaskRunStore {
   async getSnapshot(runId:string,after=0):Promise<TaskRunSnapshot>{const run=await this.getRun(runId);if(!run)throw new Error('Unknown task run');return{run,checkpoint:await this.getCheckpoint(runId),events:await this.getEvents(runId,after)};}
   async listBySession(sessionId:string){
     const db=await openTaskRunDatabase();
-    const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if((cur.value as TaskRun).sessionId===sessionId)a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
+    const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const cur=q.result;if(!cur){resolve(a);return;}if((cur.value as TaskRun).sessionId===sessionId)a.push(normalizeRun(cur.value)!);cur.continue();};q.onerror=()=>reject(q.error);});
     db.close();return out;
   }
-  async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(c.value);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
+  async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(normalizeRun(c.value)!);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
   async markInterrupted(){const runs=await this.listActiveRuns();return Promise.all(runs.filter(r=>r.status==='running').map(r=>this.updateStatus(r.id,'interrupted')));}
   async addEvidence(evidence: EvidenceRecord){
     const db=await openTaskRunDatabase();
