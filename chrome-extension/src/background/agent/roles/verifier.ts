@@ -16,6 +16,7 @@ export class TaskVerifier {
   constructor(private readonly llm: BaseChatModel) {}
 
   private deterministic(steps: PlanStep[], webTask: boolean): VerificationResult | null {
+    if (!steps.length && webTask) return { passed: false, reason: '网页任务缺少结构化子任务', evidenceIds: [] };
     if (!steps.length) return { passed: true, reason: '没有结构化子任务需要额外核验', evidenceIds: [] };
     const incomplete = steps.filter(step => !['completed', 'skipped'].includes(step.status));
     if (incomplete.length) {
