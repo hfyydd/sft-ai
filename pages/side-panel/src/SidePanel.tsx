@@ -8,6 +8,9 @@ import { t } from '@extension/i18n';
 import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
+import { TaskPlanPanel } from './components/TaskPlanPanel';
+import { TaskTimeline } from './components/TaskTimeline';
+import { EvidenceList, type EvidenceItem } from './components/EvidenceList';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -35,6 +38,7 @@ const SidePanel = () => {
   const [isReplaying, setIsReplaying] = useState(false);
   const [approvalAction, setApprovalAction] = useState<any | null>(null);
   const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
+  const [runEvidence, setRunEvidence] = useState<EvidenceItem[]>([]);
   const [manualSkills, setManualSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
@@ -363,6 +367,8 @@ const SidePanel = () => {
           setRunSnapshot(message.snapshot);
         } else if (message && message.type === 'approval_required') {
           setApprovalAction(message.action);
+        } else if (message && message.type === 'run_evidence') {
+          setRunEvidence(message.evidence || []);
         } else if (message && message.type === 'error') {
           // Handle error messages from service worker
           appendMessage({
@@ -405,6 +411,8 @@ const SidePanel = () => {
 
       if (sessionIdRef.current) {
         portRef.current.postMessage({ type: 'get_run_snapshot', runId: sessionIdRef.current, afterSequence: 0 });
+        portRef.current.postMessage({ type: 'subscribe_run', runId: sessionIdRef.current, afterSequence: 0 });
+        portRef.current.postMessage({ type: 'get_run_evidence', runId: sessionIdRef.current, limit: 200 });
       }
 
       // Setup heartbeat interval
