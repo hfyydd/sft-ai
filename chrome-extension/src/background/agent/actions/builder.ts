@@ -349,14 +349,16 @@ export class ActionBuilder {
       const intent = input.intent || '填写表单草稿并逐字段回读校验';
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
       const page = await this.context.browserContext.getCurrentPage();
-      const state = await page.getState();
       const ordered = [...input.fields];
       const failures: string[] = [];
       for (const field of ordered) {
+        const state = await page.getState();
         const node = state?.selectorMap.get(field.index);
         if (!node) { failures.push('字段 index=' + field.index + ' 不存在'); continue; }
         await page.inputTextElementNode(this.context.options.useVision, node, field.value);
-        if (!(await page.verifyInputValue(node, field.value))) {
+        const refreshed = await page.getState();
+        const refreshedNode = refreshed?.selectorMap.get(field.index);
+        if (!refreshedNode || !(await page.verifyInputValue(refreshedNode, field.value))) {
           failures.push('字段 index=' + field.index + ' 回读不一致');
         }
       }
