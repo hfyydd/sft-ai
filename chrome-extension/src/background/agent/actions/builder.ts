@@ -302,6 +302,7 @@ export class ActionBuilder {
 
         try {
           const initialTabIds = await this.context.browserContext.getAllTabIds();
+          const initialUrl = page.url();
           await page.clickElementNode(this.context.options.useVision, elementNode);
           let msg = t('act_click_ok', [input.index.toString(), elementNode.getAllTextTillNextClickableElement(2)]);
           logger.info(msg);
@@ -318,8 +319,14 @@ export class ActionBuilder {
               await this.context.browserContext.switchTab(newTabId);
             }
           }
+          const verified = currentTabIds.size > initialTabIds.size || await page.verifyClickEffect(input.index, initialUrl);
+          if (!verified) {
+            const uncertain = `点击已执行但页面未观察到可验证变化: index=${input.index}`;
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, uncertain);
+            return new ActionResult({ error: uncertain, includeInMemory: true });
+          }
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
-          return new ActionResult({ extractedContent: msg, includeInMemory: true });
+          return new ActionResult({ extractedContent: msg, success: true, includeInMemory: true });
         } catch (error) {
           const msg = t('act_errors_elementNoLongerAvailable', [input.index.toString()]);
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
