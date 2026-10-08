@@ -42,6 +42,13 @@ const SidePanel = () => {
   const [userRequest, setUserRequest] = useState<any | null>(null);
   const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
   const [runEvidence, setRunEvidence] = useState<EvidenceItem[]>([]);
+  const requestRunSnapshot = useCallback((runId: string) => {
+    runIdRef.current = runId;
+    lastRunSequenceRef.current = 0;
+    portRef.current?.postMessage({ type: 'get_run_snapshot', runId, afterSequence: 0 });
+    portRef.current?.postMessage({ type: 'subscribe_run', runId, afterSequence: 0 });
+    portRef.current?.postMessage({ type: 'get_run_evidence', runId, limit: 200 });
+  }, []);
   const [timelineHasMore, setTimelineHasMore] = useState(false);
   const [manualSkills, setManualSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
@@ -497,10 +504,12 @@ const SidePanel = () => {
         setShowStopButton(false);
       });
 
-      if (sessionIdRef.current) {
-        portRef.current.postMessage({ type: 'get_run_snapshot', runId: sessionIdRef.current, afterSequence: 0 });
-        portRef.current.postMessage({ type: 'subscribe_run', runId: sessionIdRef.current, afterSequence: 0 });
-        portRef.current.postMessage({ type: 'get_run_evidence', runId: sessionIdRef.current, limit: 200 });
+      if (runIdRef.current) {
+        requestRunSnapshot(runIdRef.current);
+      } else if (sessionIdRef.current) {
+        void chrome.runtime.sendMessage({ type: 'get_latest_run_for_session', sessionId: sessionIdRef.current }, response => {
+          if (response?.ok && response.run?.id) requestRunSnapshot(response.run.id);
+        });
       }
 
       // Setup heartbeat interval
@@ -530,7 +539,7 @@ const SidePanel = () => {
       // Clear any references since connection failed
       portRef.current = null;
     }
-  }, [handleTaskState, appendMessage, stopConnection]);
+  }, [handleTaskState, appendMessage, stopConnection, readAuthorizedLocalFile, requestRunSnapshot]);
 
   // Add safety check for message sending
   const sendMessage = useCallback(
@@ -873,11 +882,12 @@ const SidePanel = () => {
         console.log('history session selected', sessionId);
       }
       setShowHistory(false);
-      if (!portRef.current) setupConnection();
-      else if (portRef.current && sessionIdRef.current) {
-        portRef.current.postMessage({ type: 'get_run_snapshot', runId: sessionIdRef.current, afterSequence: 0 });
-        portRef.current.postMessage({ type: 'subscribe_run', runId: sessionIdRef.current, afterSequence: 0 });
-        portRef.current.postMessage({ type: 'get_run_evidence', runId: sessionIdRef.current, limit: 200 });
+      if (!portRef.current) {
+        setupConnection();
+      } else if (sessionIdRef.current) {
+        void chrome.runtime.sendMessage({ type: 'get_latest_run_for_session', sessionId: sessionIdRef.current }, response => {
+          if (response?.ok && response.run?.id) requestRunSnapshot(response.run.id);
+        });
       }
     } catch (error) {
       console.error('Failed to load session:', error);
