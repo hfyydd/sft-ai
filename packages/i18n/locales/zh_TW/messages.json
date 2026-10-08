@@ -960,20 +960,49 @@
       }
     }
   },
-  "task_plan": {"message":"任務計畫"},
-  "task_timeline": {"message":"任務時間線"},
-  "task_evidence": {"message":"證據來源"},
-  "task_status": {"message":"狀態"},
-  "task_pause": {"message":"暫停"},
-  "task_resume": {"message":"繼續"},
-  "task_cancel": {"message":"取消"},
-  "task_approval_needed": {"message":"需要確認"},
-  "task_approve_once": {"message":"批准一次"},
-  "task_reject": {"message":"拒絕"},
-  "task_user_input_needed": {"message":"需要你的輸入"},
-  "task_submit_answer": {"message":"提交回答"},
-  "task_load_earlier": {"message":"載入較早事件"},
-  "task_manual_skills": {"message":"本次任務 Skill"},
-  "task_no_evidence": {"message":"沒有可持久化的證據，請人工核驗。"}
-
+  "task_plan": {
+    "message": "任務計畫"
+  },
+  "task_timeline": {
+    "message": "任務時間線"
+  },
+  "task_evidence": {
+    "message": "證據來源"
+  },
+  "task_status": {
+    "message": "狀態"
+  },
+  "task_pause": {
+    "message": "暫停"
+  },
+  "task_resume": {
+    "message": "繼續"
+  },
+  "task_cancel": {
+    "message": "取消"
+  },
+  "task_approval_needed": {
+    "message": "需要確認"
+  },
+  "task_approve_once": {
+    "message": "批准一次"
+  },
+  "task_reject": {
+    "message": "拒絕"
+  },
+  "task_user_input_needed": {
+    "message": "需要你的輸入"
+  },
+  "task_submit_answer": {
+    "message": "提交回答"
+  },
+  "task_load_earlier": {
+    "message": "載入較早事件"
+  },
+  "task_manual_skills": {
+    "message": "本次任務 Skill"
+  },
+  "task_no_evidence": {
+    "message": "沒有可持久化的證據，請人工核驗。"
+  }
 }
