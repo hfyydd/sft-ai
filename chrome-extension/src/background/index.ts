@@ -387,7 +387,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
   // 任务标签页由 new_task/follow_up_task/replay 在创建 Executor 前显式绑定。
   // 不再静默读取活动标签页，避免任务在用户切换窗口后漂移到另一页面。
 
-  const executor = new Executor(taskWithPage, taskId, browserContext, navigatorLLM, {
+  const executor = new Executor(task, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
     skillsInstructions: await getSkillsSystemInstructions(skillIds),
     agentOptions: {
