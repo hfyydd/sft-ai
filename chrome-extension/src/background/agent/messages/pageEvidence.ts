@@ -8,6 +8,7 @@ export interface PageEvidenceMetadata {
   title: string;
   capturedAt: string;
   pageNumber?: number;
+  evidenceId?: string;
 }
 
 export interface PageEvidence {
@@ -28,6 +29,7 @@ export function formatPageEvidence(
     `title=${metadata.title}`,
     `capturedAt=${metadata.capturedAt}`,
     metadata.pageNumber === undefined ? null : `pageNumber=${metadata.pageNumber}`,
+       metadata.evidenceId === undefined ? null : `evidenceId=${metadata.evidenceId}`,
   ]
     .filter(Boolean)
     .join(' | ');
