@@ -516,7 +516,7 @@ chrome.runtime.onConnect.addListener(port => {
     port.onDisconnect.addListener(() => {
       // Closing the Side Panel only disconnects the UI. The durable task continues.
       console.log('Side panel disconnected');
-      currentPort = null;
+      if (currentPort === port) currentPort = null;
     });
   }
 });
