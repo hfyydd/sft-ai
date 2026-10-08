@@ -47,17 +47,16 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // if canceled_by_user, remove the tab from the browser context
 chrome.debugger.onDetach.addListener(async (source, reason) => {
   console.log('Debugger detached:', source, reason);
-  if (reason === 'canceled_by_user') {
-    if (source.tabId) {
-      currentExecutor?.cancel();
-      await browserContext.cleanup();
-    }
+  if (source.tabId) {
+    await runController.handleDebuggerDetached(source.tabId, reason);
+    if (reason === 'canceled_by_user') await browserContext.cleanup();
   }
 });
 
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener(tabId => {
   browserContext.removeAttachedPage(tabId);
+  void runController.handleTabClosed(tabId);
 });
 
 logger.info('background loaded');
@@ -182,6 +181,11 @@ chrome.runtime.onConnect.addListener(port => {
               parameterHash: message.parameterHash,
               approved: message.type === 'approve_action',
             });
+            if (ok && message.type === 'approve_action' && !runController.getExecutor()) {
+              await runController.resume(message.runId).catch(error => logger.warning('Approval accepted; resume deferred:', error));
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            }
             return port.postMessage({ type: ok ? 'success' : 'error', error: ok ? undefined : 'Approval is stale or invalid' });
           }
 
@@ -219,7 +223,7 @@ chrome.runtime.onConnect.addListener(port => {
               port.postMessage({
                 type: 'run_event',
                 event: {
-                  type: ExecutionState.TASK_START ? 'execution' : 'execution',
+                  type: 'execution',
                   actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload ? (event.payload as any).actor : 'system',
                   state: event.type,
                   data: event.payload && typeof event.payload === 'object' && 'data' in event.payload ? (event.payload as any).data : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
