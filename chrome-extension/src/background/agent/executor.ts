@@ -103,6 +103,7 @@ export class Executor {
     if (!checkpoint) return;
     this.context.plan = [...checkpoint.plan];
     this.context.taskMemory.loadFacts(checkpoint.memory);
+    this.context.approvedAction = checkpoint.approvedAction;
   }
 
   getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
@@ -121,6 +122,7 @@ export class Executor {
       navigator: navigatorInfo,
       planner: plannerInfo,
       pendingWrite: this.context.pendingWrite,
+      approvedAction: this.context.approvedAction,
     };
   }
 
