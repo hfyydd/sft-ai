@@ -128,7 +128,7 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       const memoryWrite = (cleanedPlan.memory_write || '').trim();
       if (memoryWrite) {
         const evidenceIds = [...memoryWrite.matchAll(/(?:evidence|证据)\s*[:：]\s*([A-Za-z0-9_, -]+)/gi)]
-          .flatMap(match => match[1].split(/[，,\\s]+/).filter(Boolean));
+          .flatMap(match => match[1].split(/[，,\s]+/).filter(Boolean));
         this.context.taskMemory.add(memoryWrite, evidenceIds, this.context.plan[0]?.id);
       }
 
