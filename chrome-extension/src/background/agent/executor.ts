@@ -487,6 +487,14 @@ export class Executor {
     this.context.resume();
   }
 
+  getPendingWrite() {
+    return this.context.pendingWrite;
+  }
+
+  clearPendingWrite() {
+    this.context.pendingWrite = undefined;
+  }
+
   async pause(): Promise<void> {
     this.context.pause();
   }
