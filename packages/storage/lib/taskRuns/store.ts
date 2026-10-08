@@ -133,6 +133,23 @@ export class TaskRunStore {
     db.close();
   }
 
+  async getEvidenceByIds(runId: string, ids: string[], maxContentChars = 12000): Promise<EvidenceRecord[]> {
+    const wanted = [...new Set(ids)].slice(0, 50);
+    if (!wanted.length) return [];
+    const records = await this.getEvidence(runId, 500);
+    const byId = new Map(records.map(record => [record.id, record]));
+    return wanted
+      .map(id => byId.get(id))
+      .filter((record): record is EvidenceRecord => Boolean(record))
+      .map(record => ({
+        ...record,
+        content:
+          record.content.length > maxContentChars
+            ? record.content.slice(0, maxContentChars) + '\n…[证据片段已截断]'
+            : record.content,
+      }));
+  }
+
   async getEvidence(runId:string,limit=200):Promise<EvidenceRecord[]>{
     const seen=new Set<string>();
     const out:EvidenceRecord[]=[];
