@@ -128,7 +128,7 @@ chrome.runtime.onConnect.addListener(port => {
                 tabId: message.tabId,
                 createExecutor: async taskRun => {
                   await browserContext.switchTab(message.tabId);
-                  return setupExecutor(taskRun.id, taskRun.goal, browserContext);
+                  return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
                 },
               });
             } else {
@@ -156,7 +156,7 @@ chrome.runtime.onConnect.addListener(port => {
             } else {
               // Agent Loop v2: 执行器已清理(如 SW 重启)时,自动降级为新任务而不是报错
               logger.info('follow_up_task: executor was cleaned up, starting a new task instead');
-              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
+              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext, message.skillIds || []);
               subscribeToExecutorEvents(currentExecutor);
               const result = await currentExecutor.execute();
               logger.info('new_task execution result', message.tabId, result);
@@ -313,7 +313,7 @@ chrome.runtime.onConnect.addListener(port => {
   }
 });
 
-async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext) {
+async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext, skillIds: string[] = []) {
   const providers = await llmProviderStore.getAllProviders();
   // if no providers, need to display the options page
   if (Object.keys(providers).length === 0) {
@@ -372,7 +372,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 
   const executor = new Executor(taskWithPage, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
-    skillsInstructions: await getSkillsSystemInstructions(),
+    skillsInstructions: await getSkillsSystemInstructions(skillIds),
     agentOptions: {
       maxSteps: generalSettings.maxSteps,
       maxFailures: generalSettings.maxFailures,
@@ -382,7 +382,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
       planningInterval: generalSettings.planningInterval,
     },
     generalSettings: generalSettings,
-    toolPolicy: await buildToolPolicy(),
+    toolPolicy: await buildToolPolicy(skillIds),
   });
 
   return executor;
