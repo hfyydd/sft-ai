@@ -120,20 +120,19 @@ chrome.runtime.onConnect.addListener(port => {
             logger.info('new_task', message.tabId, message.task);
             await browserContext.switchTab(message.tabId);
             const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
-            if (!run) {
-              await runController.createAndStart({
-                runId: message.taskId,
-                sessionId: message.taskId,
-                goal: message.task,
-                tabId: message.tabId,
-                createExecutor: async taskRun => {
-                  await browserContext.switchTab(message.tabId);
-                  return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
-                },
-              });
-            } else {
-              await runController.recover(run.id);
+            if (run) {
+              return port.postMessage({ type: 'error', error: `任务 ${message.taskId} 已存在，请使用继续/恢复操作` });
             }
+            await runController.createAndStart({
+              runId: message.taskId,
+              sessionId: message.taskId,
+              goal: message.task,
+              tabId: message.tabId,
+              createExecutor: async taskRun => {
+                await browserContext.switchTab(message.tabId);
+                return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
+              },
+            });
             currentExecutor = runController.getExecutor();
             if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
             break;
@@ -195,9 +194,17 @@ chrome.runtime.onConnect.addListener(port => {
           }
 
           case 'resume_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
-            await currentExecutor.resume();
-            return port.postMessage({ type: 'success' });
+            if (currentExecutor) {
+              await currentExecutor.resume();
+              return port.postMessage({ type: 'success' });
+            }
+            if (message.taskId) {
+              await runController.recover(message.taskId);
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+              return port.postMessage({ type: 'success' });
+            }
+            return port.postMessage({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
           }
 
           case 'pause_task': {
