@@ -82,6 +82,7 @@ export class AgentContext {
     this.stopped = false;
     this.nSteps = 0;
     this.consecutiveFailures = 0;
+    this.replanCount = 0;
     this.stepInfo = null;
     this.actionResults = [];
     this.stateMessageAdded = false;
