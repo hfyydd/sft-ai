@@ -43,11 +43,17 @@ const logger = createLogger('Action');
 
 const SENSITIVE_INTENT = /(提交|删除|购买|支付|付款|发送|授权|下载|保存|确认|结算|下单|注销|关闭账号|submit|delete|purchase|pay|checkout|send|authorize|download)/i;
 
-const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') =>
-  toolName === 'close_tab' ||
-  policyRequiresApproval(toolName, { ...((args && typeof args === 'object') ? args : {}), intent }, elementText) ||
-  SENSITIVE_INTENT.test(intent) ||
-  SENSITIVE_INTENT.test(elementText);
+const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') => {
+  const keys = args && typeof args === 'object' && 'keys' in args ? String(args.keys || '') : '';
+  const submitShortcut = toolName === 'send_keys' && /enter|return/i.test(keys);
+  return (
+    toolName === 'close_tab' ||
+    submitShortcut ||
+    policyRequiresApproval(toolName, { ...((args && typeof args === 'object') ? args : {}), intent }, elementText) ||
+    SENSITIVE_INTENT.test(intent) ||
+    SENSITIVE_INTENT.test(elementText)
+  );
+};
 
 export class InvalidInputError extends Error {
   constructor(message: string) {
