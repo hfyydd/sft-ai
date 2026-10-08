@@ -995,7 +995,7 @@
   "task_submit_answer": {"message":"Submit answer"},
   "task_load_earlier": {"message":"Load earlier events"},
   "task_manual_skills": {"message":"Skills for this task"},
-  "task_no_evidence": {"message":"No persisted evidence; please verify manually."}
+  "task_no_evidence": {"message":"No persisted evidence; please verify manually."},
   "options_general_taskRunRetentionDays": {"message":"Retenção das tarefas (dias)"},
   "options_general_taskRunRetentionDays_desc": {"message":"Registros de tarefas concluídas mais antigos serão removidos."},
   "options_general_taskRunMaxTerminalRuns": {"message":"Máximo de tarefas concluídas"},
