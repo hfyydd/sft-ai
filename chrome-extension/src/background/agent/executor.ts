@@ -29,7 +29,7 @@ import type { ToolPolicy } from '../services/toolPolicy';
 import { taskRunStore } from '@extension/storage';
 import type { TaskCheckpoint, PlanStep } from '@extension/storage';
 import { classifyFailure, recoveryAdvice } from './recovery';
-import { advancePlan, mergePlan } from './plan';
+import { advancePlan, mergePlan, normalizePlanSteps } from './plan';
 import { TaskVerifier } from './roles/verifier';
 
 const logger = createLogger('Executor');
@@ -374,8 +374,16 @@ export class Executor {
         planOutput = await this.planner.execute();
       }
       if (planOutput.result) {
-        this.context.plan = mergePlan(this.context.plan, planOutput.result.steps ?? []);
-        this.context.messageManager.addPlan(JSON.stringify(planOutput.result), positionForPlan);
+        const normalized = normalizePlanSteps(planOutput.result.steps, planOutput.result.next_steps);
+        this.context.plan = mergePlan(this.context.plan, normalized);
+        this.context.messageManager.addPlan(
+          JSON.stringify({ ...planOutput.result, steps: this.context.plan }),
+          positionForPlan,
+        );
+        await taskRunStore.appendEvent(this.context.taskId, 'plan.updated', {
+          steps: this.context.plan,
+          replanCount: this.context.replanCount,
+        }).catch(() => undefined);
       }
       return planOutput;
     } catch (error) {
