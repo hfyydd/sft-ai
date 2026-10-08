@@ -266,6 +266,22 @@ export class Executor {
   /**
    * Helper method to run planner and store its output
    */
+  private async buildFinalAnswerWithEvidence(answer: string, webTask: boolean): Promise<string> {
+    if (!webTask) return answer;
+    const evidence = await taskRunStore.getEvidence(this.context.taskId, 50).catch(() => []);
+    if (!evidence.length) return answer + '\n\n来源未能持久化，结论请人工核验。';
+    const requiredIds = new Set(this.context.plan.flatMap(step => step.evidenceIds));
+    const selected = requiredIds.size ? evidence.filter(item => requiredIds.has(item.id)) : evidence;
+    const citations = (selected.length ? selected : evidence)
+      .slice(0, 20)
+      .map(item =>
+        '- ' + item.id + ' · ' + (item.title || '页面') + ' · ' + item.url +
+        (item.pageNumber ? ' · 第' + item.pageNumber + '页' : ''),
+      )
+      .join('\n');
+    return answer + '\n\n来源证据：\n' + citations;
+  }
+
   private async runPlanner(): Promise<AgentOutput<PlannerOutput> | null> {
     const context = this.context;
     try {
