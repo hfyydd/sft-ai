@@ -77,10 +77,15 @@ abstract class BasePrompt {
       ? `\n[Task memory / 工作记忆 - 关键事实来自此前步骤]\n${wrapUntrustedContent(memoryBlock)}\n`
       : '';
 
-    const currentTab = `{id: ${browserState.tabId}, url: ${browserState.url}, title: ${browserState.title}}`;
-    const otherTabs = browserState.tabs
-      .filter(tab => tab.id !== browserState.tabId)
-      .map(tab => `- {id: ${tab.id}, url: ${tab.url}, title: ${tab.title}}`);
+    const currentTab = wrapUntrustedContent(
+      `{id: ${browserState.tabId}, url: ${browserState.url}, title: ${browserState.title}}`,
+    );
+    const otherTabs = wrapUntrustedContent(
+      browserState.tabs
+        .filter(tab => tab.id !== browserState.tabId)
+        .map(tab => `- {id: ${tab.id}, url: ${tab.url}, title: ${tab.title}`)
+        .join('\n'),
+    );
     const stateDescription = `
 [Task history memory ends]
 [Current state starts here]
