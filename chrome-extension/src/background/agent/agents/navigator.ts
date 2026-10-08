@@ -429,6 +429,12 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             parameterHash: await hashActionArgs(actionArgs),
             tabId: browserState.tabId,
             url: browserState.url,
+            expectedUrl:
+              actionName === 'go_to_url' && actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs
+                ? String(actionArgs.url)
+                : actionName === 'open_tab' && actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs
+                  ? String(actionArgs.url)
+                  : undefined,
             startedAt: Date.now(),
           };
           if (actionArgs && typeof actionArgs === 'object' && 'index' in actionArgs && typeof actionArgs.index === 'number') {
