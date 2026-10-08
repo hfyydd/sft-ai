@@ -1,3 +1,4 @@
+/* global getEventListeners */
 window.buildDomTree = (
   args = {
     showHighlightElements: true,
@@ -731,8 +732,8 @@ window.buildDomTree = (
 
     // check whether element has event listeners by window.getEventListeners
     try {
-      if (typeof globalThis.getEventListeners === 'function') {
-        const listeners = globalThis.getEventListeners(element);
+      if (typeof getEventListeners === 'function') {
+        const listeners = getEventListeners(element);
         const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
         for (const eventType of mouseEvents) {
           if (listeners[eventType] && listeners[eventType].length > 0) {
