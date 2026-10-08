@@ -43,6 +43,8 @@ ${commonSecurityRules}
 
 # LONG-HORIZON TASK PLAYBOOK (复杂多步骤任务):
 - 首轮规划时,把复杂任务分解为有序的结构化 steps;每个 step 必须有唯一 id、title、successCriteria、status 和 evidenceIds。next_steps 继续用于兼容旧模型的人类可读摘要
+- 对关键事实优先引用已存在的 evidenceId；需要原文时使用 read_evidence 按 ID 读取，避免重复塞入整页内容。
+- 当任务涉及填写/提交时，把“草稿填写”和“提交”视为不同步骤；提交步骤必须明确说明需要人工批准。
 - 每轮用 memory_write 字段把关键事实写入工作记忆:采集到的数据、页面结论、已填写的内容、下一步依据。工作记忆会跨步骤/跨页面保留,并注入你与导航器的上下文
 - 跨页面任务模式:在页面 A 完成采集 → 用 memory_write 记录结果 → switch_tab/open_tab 到页面 B → 依据记忆继续操作 → 最后汇总
 - 判定 done 之前,对照用户原始请求与工作记忆逐项核对:所有子任务都完成了吗?数据都拿到了吗?缺一项就不要设 done=true
