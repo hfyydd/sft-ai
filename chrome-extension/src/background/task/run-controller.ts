@@ -1,4 +1,4 @@
-import { taskRunStore, type TaskRun, type TaskRunStatus } from '@extension/storage';
+import { taskRunStore, type PendingWrite, type TaskRun, type TaskRunStatus } from '@extension/storage';
 import type { Executor } from '../agent/executor';
 import type { AgentEvent } from '../agent/event/types';
 
@@ -15,8 +15,12 @@ export class RunController {
   private factory: RunControllerFactory | null = null;
   private subscribers = new Set<(event: AgentEvent) => Promise<void> | void>();
   private starting = false;
+  private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
 
-  configure(factory: RunControllerFactory) { this.factory = factory; }
+  configure(factory: RunControllerFactory, verifier?: (run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) {
+    this.factory = factory;
+    this.verifier = verifier ?? null;
+  }
 
   subscribe(callback: (event: AgentEvent) => Promise<void> | void) {
     this.subscribers.add(callback);
@@ -227,12 +231,23 @@ export class RunController {
       throw new Error('Task is waiting for user input; answer the persisted question before recovery');
     }
     if (checkpoint?.pendingWrite) {
-      await taskRunStore.appendEvent(run.id, 'runtime.recovery_needs_verification', {
+      const verified = this.verifier ? await this.verifier(run, checkpoint.pendingWrite) : false;
+      if (!verified) {
+        await taskRunStore.appendEvent(run.id, 'runtime.recovery_needs_verification', {
+          toolName: checkpoint.pendingWrite.toolName,
+          tabId: checkpoint.pendingWrite.tabId,
+          url: checkpoint.pendingWrite.url,
+        });
+        throw new Error('Task has an unknown browser write; verify its postcondition before recovery');
+      }
+      const event = await taskRunStore.appendEvent(run.id, 'runtime.recovery_verified', {
         toolName: checkpoint.pendingWrite.toolName,
-        tabId: checkpoint.pendingWrite.tabId,
-        url: checkpoint.pendingWrite.url,
       });
-      throw new Error('Task has an unknown browser write; verify its postcondition before recovery');
+      await taskRunStore.saveCheckpoint({
+        ...checkpoint,
+        sequence: event.sequence,
+        pendingWrite: undefined,
+      });
     }
     await this.assertRecoverableTab(run.activeTabId ?? -1);
     return this.start({ ...run, status: 'running' });
