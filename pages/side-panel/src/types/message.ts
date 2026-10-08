@@ -37,7 +37,7 @@ export const ACTOR_PROFILES = {
 } as const;
 
 export interface RunCommandMessage {
-  type: 'get_run_snapshot' | 'subscribe_run' | 'get_run_evidence' | 'pause_task' | 'resume_task' | 'cancel_task';
+  type: 'get_run_snapshot' | 'subscribe_run' | 'get_run_events' | 'get_run_evidence' | 'pause_task' | 'resume_task' | 'cancel_task';
   runId?: string;
   afterSequence?: number;
   limit?: number;
