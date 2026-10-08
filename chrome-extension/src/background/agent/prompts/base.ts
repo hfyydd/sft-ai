@@ -1,3 +1,4 @@
+import { taskRunStore } from '@extension/storage';
 import { HumanMessage, type SystemMessage } from '@langchain/core/messages';
 import type { AgentContext } from '@src/background/agent/types';
 import { wrapUntrustedContent } from '../messages/utils';
@@ -65,6 +66,13 @@ abstract class BasePrompt {
 
     // Agent Loop v2: 工作记忆注入(对规划器与导航器同时可见)
     const memoryBlock = context.taskMemory ? context.taskMemory.serialize() : '';
+    const evidence = await taskRunStore.getEvidence(context.taskId, 12).catch(() => []);
+    const evidenceSection = evidence.length
+      ? '\n[Persistent evidence index / 持久证据索引]\n' + evidence.map(e =>
+          '- ' + e.id + ': ' + e.source + ' | ' + e.title + ' | ' + e.url + ' | ' + new Date(e.capturedAt).toISOString() +
+          (e.pageNumber ? ' | page=' + e.pageNumber : '')
+        ).join('\n') + '\n'
+      : '';
     const memorySection = memoryBlock
       ? `\n[Task memory / 工作记忆 - 关键事实来自此前步骤]\n${wrapUntrustedContent(memoryBlock)}\n`
       : '';
@@ -84,7 +92,7 @@ Interactive elements from top layer of the current page inside the viewport:
 ${formattedElementsText}
 ${stepInfoDescription}
 ${actionResultsDescription}
-${memorySection}
+${memorySection}${evidenceSection}
 `;
 
     if (browserState.screenshot && context.options.useVision) {
