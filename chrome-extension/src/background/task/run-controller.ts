@@ -191,7 +191,12 @@ export class RunController {
     if (!run || run.activeTabId !== tabId || !ACTIVE.has(run.status)) return;
     await taskRunStore.updateStatus(runId, 'interrupted');
     await taskRunStore.appendEvent(runId, 'runtime.tab_closed', { tabId });
-    if (this.executor) await this.executor.pause().catch(() => undefined);
+    if (this.executor) {
+      await this.executor.cleanup().catch(() => undefined);
+      this.executorSubscription?.();
+      this.executorSubscription = null;
+      this.executor = null;
+    }
   }
 
   async handleDebuggerDetached(tabId: number, reason: string) {
