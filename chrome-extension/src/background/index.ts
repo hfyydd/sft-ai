@@ -24,6 +24,7 @@ import { buildToolPolicy } from './services/toolPolicy';
 import { taskRunStore } from '@extension/storage';
 import { runController } from './task/run-controller';
 import { resolveApproval } from './task/approval-gate';
+import { resolveUserRequest } from './task/user-gate';
 
 const logger = createLogger('background');
 
@@ -165,6 +166,17 @@ chrome.runtime.onConnect.addListener(port => {
             subscribeToExecutorEvents(currentExecutor);
             void currentExecutor.execute();
             break;
+          }
+
+          case 'user_intervention_response': {
+            if (!message.runId || !message.nonce || typeof message.answer !== 'string') {
+              return port.postMessage({ type: 'error', error: '无效的用户介入响应' });
+            }
+            const ok = await resolveUserRequest({ runId: message.runId, nonce: message.nonce, answer: message.answer });
+            if (ok) {
+              return port.postMessage({ type: 'success' });
+            }
+            return port.postMessage({ type: 'error', error: '用户介入请求已过期或无效' });
           }
 
           case 'approve_action':
