@@ -221,6 +221,7 @@ export class ActionResult {
   error: string | null;
   includeInMemory: boolean;
   interactedElement: DOMHistoryElement | null;
+  sideEffectUnknown: boolean;
 
   constructor(params: Partial<ActionResult> = {}) {
     this.isDone = params.isDone ?? false;
@@ -229,6 +230,7 @@ export class ActionResult {
     this.extractedContent = params.extractedContent ?? null;
     this.error = params.error ?? null;
     this.includeInMemory = params.includeInMemory ?? false;
+    this.sideEffectUnknown = params.sideEffectUnknown ?? false;
   }
 }
 
