@@ -86,8 +86,6 @@ export class RunController {
     const persisted = await taskRunStore.appendEvent(run.id, event.state, {
       actor: event.actor, data: event.data, timestamp: event.timestamp,
     });
-    for (const subscriber of this.subscribers) await subscriber(event);
-
     let nextStatus: TaskRunStatus | null = null;
     if (event.state === 'task.start') nextStatus = 'running';
     else if (event.state === 'task.pause') nextStatus = 'paused';
@@ -104,6 +102,7 @@ export class RunController {
         memory: snapshot.memory, evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id), activeTabId: run.activeTabId,
       }).catch(error => taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined));
     }
+    for (const subscriber of this.subscribers) await subscriber(event);
   }
 
   async pause() {
