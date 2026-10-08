@@ -177,6 +177,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch(e => sendResponse({ ok: false, error: String(e).slice(0, 300) }));
     return true; // 异步响应
   }
+  return false;
 });
 
 // Setup connection listener for long-lived connections (e.g., side panel)
