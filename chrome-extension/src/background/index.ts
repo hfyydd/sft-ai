@@ -66,6 +66,7 @@ runController.configure(async run => {
   return setupExecutor(run.id, run.goal, browserContext, run.skillIds);
 });
 void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
+void taskRunStore.cleanupRetention().catch(error => logger.error('Failed to cleanup task runtime retention:', error));
 
 // Initialize analytics
 analytics.init().catch(error => {
