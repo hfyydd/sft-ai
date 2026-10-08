@@ -24,27 +24,6 @@ function isOpenAIReasoningModel(modelName: string): boolean {
   );
 }
 
-// Function to check if a model is an Anthropic Opus model
-function isAnthropicOpusModel(modelName: string): boolean {
-  // Extract the model name without provider prefix if present
-  let modelNameWithoutProvider = modelName;
-  if (modelName.startsWith('anthropic/')) {
-    modelNameWithoutProvider = modelName.substring(10);
-  }
-  return modelNameWithoutProvider.startsWith('claude-opus');
-}
-
-// check if a model is sonnet-4-5 or haiku-4-5
-function isAnthropic4_5Model(modelName: string): boolean {
-  let modelNameWithoutProvider = modelName;
-  if (modelName.startsWith('anthropic/')) {
-    modelNameWithoutProvider = modelName.substring(10);
-  }
-  return (
-    modelNameWithoutProvider.startsWith('claude-sonnet-4-5') || modelNameWithoutProvider.startsWith('claude-haiku-4-5')
-  );
-}
-
 function createOpenAIChatModel(
   providerConfig: ProviderConfig,
   modelConfig: ModelConfig,
