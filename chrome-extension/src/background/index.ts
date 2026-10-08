@@ -30,6 +30,7 @@ const logger = createLogger('background');
 const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
+let uiExecutorUnsubscribe: (() => void) | null = null;
 const SIDE_PANEL_URL = chrome.runtime.getURL('side-panel/index.html');
 
 // Setup side panel behavior
@@ -59,6 +60,11 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 
 logger.info('background loaded');
+runController.configure(async run => {
+  if (run.activeTabId === undefined) throw new Error('Task has no target tab');
+  await browserContext.switchTab(run.activeTabId);
+  return setupExecutor(run.id, run.goal, browserContext, run.skillIds);
+});
 void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
 
 // Initialize analytics
@@ -128,6 +134,7 @@ chrome.runtime.onConnect.addListener(port => {
               sessionId: message.taskId,
               goal: message.task,
               tabId: message.tabId,
+              skillIds: message.skillIds || [],
               createExecutor: async taskRun => {
                 await browserContext.switchTab(message.tabId);
                 return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
@@ -142,24 +149,21 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_noTask') });
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
-            logger.info('follow_up_task', message.tabId, message.task);
             await browserContext.switchTab(message.tabId);
-
-            // If executor exists, add follow-up task
-            if (currentExecutor) {
-              currentExecutor.addFollowUpTask(message.task);
-              // Re-subscribe to events in case the previous subscription was cleaned up
-              subscribeToExecutorEvents(currentExecutor);
-              const result = await currentExecutor.execute();
-              logger.info('follow_up_task execution result', message.tabId, result);
-            } else {
-              // Agent Loop v2: 执行器已清理(如 SW 重启)时,自动降级为新任务而不是报错
-              logger.info('follow_up_task: executor was cleaned up, starting a new task instead');
-              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext, message.skillIds || []);
-              subscribeToExecutorEvents(currentExecutor);
-              const result = await currentExecutor.execute();
-              logger.info('new_task execution result', message.tabId, result);
+            const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+            if (!run) {
+              return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
             }
+            if (run.status === 'interrupted' || run.status === 'paused') {
+              await runController.recover(run.id);
+              currentExecutor = runController.getExecutor();
+            }
+            if (!currentExecutor) return port.postMessage({ type: 'error', error: '任务执行器不可用，请先恢复任务' });
+            currentExecutor.addFollowUpTask(message.task);
+            await taskRunStore.appendEvent(run.id, 'task.follow_up', { task: message.task });
+            await taskRunStore.updateStatus(run.id, 'running');
+            subscribeToExecutorEvents(currentExecutor);
+            void currentExecutor.execute();
             break;
           }
 
@@ -408,10 +412,8 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 // Update subscribeToExecutorEvents to use port
 async function subscribeToExecutorEvents(executor: Executor) {
   // Clear previous event listeners to prevent multiple subscriptions
-  executor.clearExecutionEvents();
-
-  // Subscribe to new events
-  executor.subscribeExecutionEvents(async event => {
+  if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
+  uiExecutorUnsubscribe = executor.subscribeExecutionEvents(async event => {
     try {
       if (currentPort) {
         currentPort.postMessage(event);
@@ -425,7 +427,9 @@ async function subscribeToExecutorEvents(executor: Executor) {
       event.state === ExecutionState.TASK_FAIL ||
       event.state === ExecutionState.TASK_CANCEL
     ) {
-      await currentExecutor?.cleanup();
+      uiExecutorUnsubscribe?.();
+      uiExecutorUnsubscribe = null;
+      await runController.clearIfTerminal();
     }
   });
 }
