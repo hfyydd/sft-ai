@@ -121,9 +121,21 @@ analyticsSettingsStore.subscribe(() => {
 });
 
 // Listen for simple messages (e.g., from options page)
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg?.type === 'resolve_local_file_read' && msg.runId && msg.requestId && (msg.dataBase64 || msg.error)) {
-    resolveLocalPdfBytes({ runId: msg.runId, requestId: msg.requestId, dataBase64: msg.dataBase64 })
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (
+    msg?.type === 'resolve_local_file_read' &&
+    sender.id === chrome.runtime.id &&
+    sender.url === SIDE_PANEL_URL &&
+    msg.runId &&
+    msg.requestId &&
+    (typeof msg.dataBase64 === 'string' || typeof msg.error === 'string')
+  ) {
+    resolveLocalPdfBytes({
+      runId: msg.runId,
+      requestId: msg.requestId,
+      dataBase64: typeof msg.dataBase64 === 'string' ? msg.dataBase64 : undefined,
+      error: typeof msg.error === 'string' ? msg.error : undefined,
+    })
       .then(ok => sendResponse({ ok }))
       .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
     return true;
