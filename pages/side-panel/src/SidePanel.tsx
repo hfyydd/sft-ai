@@ -419,7 +419,7 @@ const SidePanel = () => {
       portRef.current.onMessage.addListener((message: any) => {
         // Add type checking for message
         if (message && message.type === EventType.EXECUTION) {
-          if (message.data?.taskId === sessionIdRef.current && message.runtimeEvent && typeof message.sequence === 'number') {
+          if (message.data?.taskId === runIdRef.current && message.runtimeEvent && typeof message.sequence === 'number') {
             if (message.sequence > lastRunSequenceRef.current) {
               lastRunSequenceRef.current = message.sequence;
               const runtimeEvent = { ...message };
@@ -449,7 +449,7 @@ const SidePanel = () => {
           }
         } else if (message && message.type === 'run_event') {
           const event = message.event;
-          if (event?.runId === sessionIdRef.current && event.sequence > lastRunSequenceRef.current) {
+          if (event?.runId === runIdRef.current && event.sequence > lastRunSequenceRef.current) {
             lastRunSequenceRef.current = event.sequence;
             setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), event].slice(-500) } : prev);
           }
