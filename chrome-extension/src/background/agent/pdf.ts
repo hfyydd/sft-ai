@@ -83,7 +83,6 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
 
   const pdf = await pdfjsLib.getDocument({
     data,
-    isEvalSupported: false, // MV3 CSP 禁 eval,关闭 PostScript 优化器
     useWorkerFetch: false,
     disableFontFace: true, // 只提取文本,不需要字体渲染
     // 中文 PDF 的 CID 字体需要 CMap 映射表才能解出 Unicode 文本
