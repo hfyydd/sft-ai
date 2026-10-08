@@ -117,6 +117,12 @@ export class Executor {
    */
   private checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): boolean {
     if (planOutput?.result?.done) {
+      const steps = planOutput.result.steps ?? [];
+      const invalid = steps.some(step => !['completed','skipped'].includes(step.status));
+      if (invalid) {
+        logger.info('Planner marked done but required plan steps remain incomplete');
+        return false;
+      }
       logger.info('✅ Planner confirms task completion');
       if (planOutput.result.final_answer) {
         this.context.finalAnswer = planOutput.result.final_answer;
