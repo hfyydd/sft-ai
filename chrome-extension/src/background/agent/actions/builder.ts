@@ -426,12 +426,11 @@ export class ActionBuilder {
           const approved = await requestApproval({
             runId: this.context.taskId,
             toolName: 'click_element',
-            args: { ...input, elementText: elementText.slice(0, 500), linkedUrl },
-
+            args: input,
             tabId: page.tabId,
             url: page.url(),
             targetUrl: linkedUrl || undefined,
-            reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : intent || elementText,
+            reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : (intent || elementText),
           });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
