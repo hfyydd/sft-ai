@@ -784,22 +784,41 @@ export class ActionBuilder {
           return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
         }
         const okMsg = t('act_readPage_vision_ok');
-        await this.persistEvidence('vision', page.tabId, tabUrl, tabInfo.title || '', text, tabUrl.toLowerCase().endsWith('.pdf') ? input.pageStart : undefined);
+        const visionEvidenceId = await this.persistEvidence(
+          'vision',
+          page.tabId,
+          tabUrl,
+          tabInfo.title || '',
+          text,
+          tabUrl.toLowerCase().endsWith('.pdf') ? input.pageStart : undefined,
+        );
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
         return new ActionResult({
           extractedContent: formatPageEvidence(
             'vision',
-            { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
+            {
+              tabId: page.tabId,
+              url: tabUrl,
+              title: tabInfo.title || '',
+              capturedAt: new Date().toISOString(),
+              evidenceId: visionEvidenceId ?? undefined,
+            },
             `${okMsg}:\n${text}`,
           ),
           includeInMemory: true,
         });
       }
-      await this.persistEvidence('dom', page.tabId, tabUrl, tabInfo.title || '', text);
+      const domEvidenceId = await this.persistEvidence('dom', page.tabId, tabUrl, tabInfo.title || '', text);
       return new ActionResult({
         extractedContent: formatPageEvidence(
           'dom',
-          { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
+          {
+            tabId: page.tabId,
+            url: tabUrl,
+            title: tabInfo.title || '',
+            capturedAt: new Date().toISOString(),
+            evidenceId: domEvidenceId ?? undefined,
+          },
           text,
         ),
         includeInMemory: true,
