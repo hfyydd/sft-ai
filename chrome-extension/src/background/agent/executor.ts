@@ -120,6 +120,7 @@ export class Executor {
       estimatedInputTokens: this.context.messageManager.getEstimatedTokenCount(),
       navigator: navigatorInfo,
       planner: plannerInfo,
+      pendingWrite: this.context.pendingWrite,
     };
   }
 
