@@ -16,7 +16,18 @@ export function normalizePlanSteps(steps: PlanStep[] | undefined, nextSteps: str
     }));
 
   if (source.length > MAX_PLAN_STEPS) throw new Error('Plan exceeds maximum step count');
-  return source;
+  const normalized = source.map((step, index) => ({
+    ...step,
+    status: step.status === 'completed' || step.status === 'skipped' || step.status === 'blocked'
+      ? step.status
+      : index === 0
+        ? 'running' as const
+        : 'queued' as const,
+    evidenceIds: [...new Set(step.evidenceIds ?? [])],
+  }));
+  const firstActive = normalized.find(step => step.status === 'running' || step.status === 'queued');
+  if (firstActive && !normalized.some(step => step.status === 'running')) firstActive.status = 'running';
+  return normalized;
 }
 
 export function validatePlanSteps(steps: PlanStep[]): void {
@@ -49,7 +60,7 @@ export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[
   for (const old of previous) {
     if (!incomingById.has(old.id)) merged.push({ ...old, evidenceIds: [...old.evidenceIds] });
   }
-  for (const step of incoming) {
+  for (const [index, step] of incoming.entries()) {
     const old = previous.find(item => item.id === step.id);
     const status = old?.status === 'completed' ? 'completed' : step.status;
     merged.push({
@@ -58,5 +69,10 @@ export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[
       evidenceIds: [...new Set([...(old?.evidenceIds ?? []), ...step.evidenceIds])],
     });
   }
-  return merged.slice(0, MAX_PLAN_STEPS);
+  const limited = merged.slice(0, MAX_PLAN_STEPS);
+  if (limited.length && !limited.some(step => step.status === 'running')) {
+    const candidate = limited.find(step => step.status === 'queued');
+    if (candidate) candidate.status = 'running';
+  }
+  return limited;
 }
