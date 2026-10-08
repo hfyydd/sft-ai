@@ -47,6 +47,7 @@ const SidePanel = () => {
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
+  const runIdRef = useRef<string | null>(null);
   const isReplayingRef = useRef<boolean>(false);
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
@@ -746,10 +747,17 @@ const SidePanel = () => {
         );
         console.log('newSession', newSession);
 
-        // Store the session ID in both state and ref
         const sessionId = newSession.id;
+        const runId = crypto.randomUUID();
         setCurrentSessionId(sessionId);
         sessionIdRef.current = sessionId;
+        runIdRef.current = runId;
+      } else if (!runIdRef.current) {
+        runIdRef.current = runSnapshot?.run?.id ?? crypto.randomUUID();
+      } else if (['completed','failed','cancelled'].includes(runSnapshot?.run?.status)) {
+        const parentRunId = runIdRef.current;
+        runIdRef.current = crypto.randomUUID();
+        (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId = parentRunId;
       }
 
       const userMessage = {
@@ -772,7 +780,10 @@ const SidePanel = () => {
         await sendMessage({
           type: 'follow_up_task',
           task: text,
-          taskId: sessionIdRef.current,
+          taskId: runIdRef.current,
+          runId: runIdRef.current,
+          sessionId: sessionIdRef.current,
+          parentRunId: (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId,
           tabId,
           skillIds: selectedSkillIds,
         });
@@ -782,10 +793,14 @@ const SidePanel = () => {
         await sendMessage({
           type: 'new_task',
           task: text,
-          taskId: sessionIdRef.current,
+          taskId: runIdRef.current,
+          runId: runIdRef.current,
+          sessionId: sessionIdRef.current,
+          parentRunId: (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId,
           tabId,
           skillIds: selectedSkillIds,
         });
+        delete (window as unknown as { __pendingParentRunId?: string }).__pendingParentRunId;
         console.log('new_task sent', text, tabId, sessionIdRef.current);
       }
     } catch (err) {
@@ -826,6 +841,7 @@ const SidePanel = () => {
     setMessages([]);
     setCurrentSessionId(null);
     sessionIdRef.current = null;
+    runIdRef.current = null;
     setInputEnabled(true);
     setShowStopButton(false);
     setIsFollowUpMode(false);
@@ -865,6 +881,7 @@ const SidePanel = () => {
       if (fullSession && fullSession.messages.length > 0) {
         setCurrentSessionId(fullSession.id);
         sessionIdRef.current = fullSession.id;
+        runIdRef.current = null;
         setRunSnapshot(null);
         setRunEvidence([]);
         setApprovalAction(null);
