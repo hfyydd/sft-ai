@@ -33,6 +33,7 @@ let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
 let uiExecutorUnsubscribe: (() => void) | null = null;
 const SIDE_PANEL_URL = chrome.runtime.getURL('side-panel/index.html');
+const RUNTIME_PROTOCOL_VERSION = 1;
 
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
@@ -228,7 +229,7 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
             try {
               const snapshot = await runController.snapshot(message.runId, Number(message.afterSequence || 0));
-              return port.postMessage({ type: 'run_snapshot', snapshot });
+              return port.postMessage({ type: 'run_snapshot', version: RUNTIME_PROTOCOL_VERSION, snapshot });
             } catch (error) {
               return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
             }
@@ -257,8 +258,14 @@ chrome.runtime.onConnect.addListener(port => {
             for (const event of snapshot.events) {
               port.postMessage({
                 type: 'run_event',
+                version: RUNTIME_PROTOCOL_VERSION,
                 event: {
-                  type: 'execution',
+                  id: event.id,
+                  runId: event.runId,
+                  sequence: event.sequence,
+                  type: event.type,
+                  timestamp: event.timestamp,
+                  payload: event.payload,
                   actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload ? (event.payload as any).actor : 'system',
                   state: event.type,
                   data: event.payload && typeof event.payload === 'object' && 'data' in event.payload ? (event.payload as any).data : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
@@ -266,7 +273,7 @@ chrome.runtime.onConnect.addListener(port => {
                 },
               });
             }
-            return port.postMessage({ type: 'subscribed_run', runId: message.runId });
+            return port.postMessage({ type: 'subscribed_run', version: RUNTIME_PROTOCOL_VERSION, runId: message.runId });
           }
 
           case 'cancel_task': {
