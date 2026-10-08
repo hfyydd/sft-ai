@@ -25,6 +25,8 @@ export interface PendingWrite {
   tabId?: number;
   url?: string;
   startedAt: number;
+  index?: number;
+  expectedValueHash?: string;
 }
 
 export interface PendingAction {
