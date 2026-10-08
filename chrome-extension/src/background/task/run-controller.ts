@@ -29,6 +29,9 @@ export class RunController {
       if (run.status === 'running' || run.status === 'queued') {
         await taskRunStore.updateStatus(run.id, 'interrupted');
         await taskRunStore.appendEvent(run.id, 'runtime.interrupted', { reason: 'service_worker_restart' });
+      } else if (run.status === 'waiting_approval') {
+        await taskRunStore.updateStatus(run.id, 'waiting_user');
+        await taskRunStore.appendEvent(run.id, 'approval.recovery_required', { reason: 'service_worker_restart' });
       }
     }
   }
