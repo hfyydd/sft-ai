@@ -54,8 +54,8 @@ const SidePanel = () => {
   const lastRunSequenceRef = useRef(0);
 
   // 本地 PDF 必须对应当前浏览器已打开的 file:// URL，并且扩展已获得文件 URL 访问权限。
-  const readAuthorizedLocalFile = useCallback(async (path: string, requestId: string) => {
-    if (!path.startsWith('file://')) throw new Error('只允许读取已打开的 file:// 文件');
+  const readAuthorizedLocalFile = useCallback(async (path: string, requestId: string, runId?: string) => {
+    if (!path.startsWith('file://') || !/\.pdf(?:[?#]|$)/i.test(path)) throw new Error('只允许读取已打开的 file:// 文件');
     const tabs = await chrome.tabs.query({ url: path });
     if (!tabs.some(tab => tab.url === path)) {
       throw new Error('该本地 PDF 未在浏览器中打开，不能读取任意文件路径');
@@ -88,7 +88,7 @@ const SidePanel = () => {
       binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as unknown as number[]);
     }
     const dataBase64 = btoa(binary);
-    return { type: 'resolve_local_file_read', runId: sessionIdRef.current, requestId, dataBase64 };
+    return { type: 'resolve_local_file_read', runId: runId || sessionIdRef.current, requestId, dataBase64 };
   }, []);
 
   // 接收后台的敏感动作/用户介入/本地文件请求。
@@ -103,7 +103,7 @@ const SidePanel = () => {
         return;
       }
       if (msg?.type === 'local_file_read_requested' && msg.request) {
-        void readAuthorizedLocalFile(msg.request.path, msg.request.requestId)
+        void readAuthorizedLocalFile(msg.request.path, msg.request.requestId, msg.request.runId)
           .then(response => chrome.runtime.sendMessage(response))
           .catch(error =>
             chrome.runtime.sendMessage({
@@ -405,7 +405,7 @@ const SidePanel = () => {
           if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
           const pendingFile = message.snapshot?.checkpoint?.pendingFileRead;
           if (pendingFile) {
-            void readAuthorizedLocalFile(pendingFile.path, pendingFile.requestId)
+            void readAuthorizedLocalFile(pendingFile.path, pendingFile.requestId, pendingFile.runId)
               .then(response => chrome.runtime.sendMessage(response))
               .catch(error => chrome.runtime.sendMessage({
                 type: 'resolve_local_file_read',
