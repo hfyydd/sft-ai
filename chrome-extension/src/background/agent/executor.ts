@@ -26,6 +26,7 @@ import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
 import type { ToolPolicy } from '../services/toolPolicy';
+import { taskRunStore } from '@extension/storage';
 import type { TaskCheckpoint, PlanStep } from '@extension/storage';
 import { classifyFailure, recoveryAdvice } from './recovery';
 import { advancePlan, mergePlan } from './plan';
@@ -207,12 +208,11 @@ export class Executor {
         }
       }
 
-      // Determine task completion status
-      const isCompleted = latestPlanOutput?.result?.done === true;
+      // Determine task completion status with the same evidence/plan validation used by the planner gate.
+      const isCompleted = this.checkTaskCompletion(latestPlanOutput);
 
       if (isCompleted) {
-        // Emit final answer if available, otherwise use task ID
-        const finalMessage = this.context.finalAnswer || this.context.taskId;
+        const finalMessage = await this.buildFinalAnswerWithEvidence(this.context.finalAnswer || this.context.taskId, latestPlanOutput?.result?.web_task === true);
         this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_OK, finalMessage);
 
         // Track task completion
