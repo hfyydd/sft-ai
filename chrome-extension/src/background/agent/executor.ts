@@ -30,6 +30,7 @@ import { taskRunStore } from '@extension/storage';
 import type { TaskCheckpoint, PlanStep } from '@extension/storage';
 import { classifyFailure, recoveryAdvice } from './recovery';
 import { advancePlan, mergePlan } from './plan';
+import { TaskVerifier } from './roles/verifier';
 
 const logger = createLogger('Executor');
 
@@ -50,6 +51,7 @@ export class Executor {
   private readonly plannerPrompt: PlannerPrompt;
   private readonly navigatorPrompt: NavigatorPrompt;
   private readonly generalSettings: GeneralSettingsConfig | undefined;
+  private readonly taskVerifier: TaskVerifier;
   private tasks: string[] = [];
   constructor(
     task: string,
@@ -73,6 +75,7 @@ export class Executor {
     );
 
     this.generalSettings = extraArgs?.generalSettings;
+    this.taskVerifier = new TaskVerifier(plannerLLM);
     this.tasks.push(task);
     const skillsInstructions = extraArgs?.skillsInstructions?.trim() ?? '';
     this.navigatorPrompt = new NavigatorPrompt(context.options.maxActionsPerStep, skillsInstructions);
@@ -165,6 +168,42 @@ export class Executor {
     return false;
   }
 
+  private async verifyCompletion(planOutput: AgentOutput<PlannerOutput> | null): Promise<boolean> {
+    if (!this.checkTaskCompletion(planOutput)) return false;
+    const webTask = planOutput?.result?.web_task === true;
+    if (!this.context.plan.length) return true;
+    const evidence = await taskRunStore.getEvidence(this.context.taskId, 50).catch(() => []);
+    try {
+      const result = await this.taskVerifier.verify(
+        this.tasks[this.tasks.length - 1],
+        this.context.plan,
+        evidence,
+        webTask,
+      );
+      if (!result.passed) {
+        await this.context.emitEvent(
+          Actors.VERIFIER,
+          ExecutionState.STEP_FAIL,
+          '完成核验未通过：' + result.reason,
+        );
+        return false;
+      }
+      await this.context.emitEvent(
+        Actors.VERIFIER,
+        ExecutionState.STEP_OK,
+        '完成核验通过' + (result.evidenceIds.length ? '，证据：' + result.evidenceIds.join(', ') : ''),
+      );
+      return true;
+    } catch (error) {
+      await this.context.emitEvent(
+        Actors.VERIFIER,
+        ExecutionState.STEP_FAIL,
+        '完成核验异常：' + (error instanceof Error ? error.message : String(error)),
+      );
+      return false;
+    }
+  }
+
   /**
    * Execute the task
    *
@@ -209,7 +248,7 @@ export class Executor {
           latestPlanOutput = await this.runPlanner();
 
           // Check if task is complete after planner run
-          if (this.checkTaskCompletion(latestPlanOutput)) {
+          if (await this.verifyCompletion(latestPlanOutput)) {
             break;
           }
         }
@@ -224,7 +263,7 @@ export class Executor {
       }
 
       // Determine task completion status with the same evidence/plan validation used by the planner gate.
-      const isCompleted = this.checkTaskCompletion(latestPlanOutput);
+      const isCompleted = await this.verifyCompletion(latestPlanOutput);
 
       if (isCompleted) {
         const finalMessage = await this.buildFinalAnswerWithEvidence(this.context.finalAnswer || this.context.taskId, latestPlanOutput?.result?.web_task === true);
