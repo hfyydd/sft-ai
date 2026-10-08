@@ -1326,6 +1326,7 @@ export default class Page {
         logger.info('Failed to click element, trying again', error);
         try {
           await element.evaluate(el => (el as HTMLElement).click());
+          await this._checkAndHandleNavigation();
         } catch (secondError) {
           // if URLNotAllowedError, throw it
           if (secondError instanceof URLNotAllowedError) {
