@@ -99,6 +99,15 @@ export class RunController {
     if (nextStatus) await taskRunStore.updateStatus(run.id, nextStatus).catch(() => undefined);
 
     const snapshot = this.executor?.getRuntimeSnapshot();
+    if (snapshot && nextStatus && TERMINAL.has(nextStatus)) {
+      await taskRunStore.appendEvent(run.id, 'runtime.metrics', {
+        durationMs: snapshot.durationMs,
+        estimatedInputTokens: snapshot.estimatedInputTokens,
+        steps: snapshot.step,
+        navigator: snapshot.navigator,
+        planner: snapshot.planner,
+      }).catch(() => undefined);
+    }
     if (snapshot && !(nextStatus && TERMINAL.has(nextStatus))) {
       await taskRunStore.saveCheckpoint({
         runId: run.id, sequence: persisted.sequence, plan: snapshot.plan, completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
