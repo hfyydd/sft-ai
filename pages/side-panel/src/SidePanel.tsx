@@ -56,7 +56,7 @@ const SidePanel = () => {
   // 响应后台的本地文件读取请求(file:// PDF 解析:SW 无法读 file://,由扩展页面代读)
   useEffect(() => {
     const listener = (
-      msg: { type?: string; path?: string; requestId?: string },
+      msg: { type?: string; path?: string; requestId?: string; action?: any; request?: any },
       _sender: chrome.runtime.MessageSender,
       sendResponse: (resp: { ok: boolean; requestId?: string; dataBase64?: string; error?: string }) => void,
     ) => {
