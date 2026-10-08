@@ -14,6 +14,7 @@ import {
   sendKeysActionSchema,
   scrollToTextActionSchema,
   cacheContentActionSchema,
+  readEvidenceActionSchema,
   readPageActionSchema,
   selectDropdownOptionActionSchema,
   getDropdownOptionsActionSchema,
@@ -598,6 +599,38 @@ export class ActionBuilder {
     // actions.push(extractContent);
 
     // cache content for future use
+    const readEvidence = new Action(async (input: z.infer<typeof readEvidenceActionSchema.schema>) => {
+      const intent = input.intent || '按 evidenceId 读取已采集的来源证据';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+      const records = await taskRunStore.getEvidenceByIds(this.context.taskId, input.evidenceIds, 12000);
+      if (!records.length) {
+        const msg = '未找到请求的来源证据';
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+        return new ActionResult({ error: msg, includeInMemory: true });
+      }
+      const result = records.map(record =>
+        formatPageEvidence(
+          record.source,
+          {
+            tabId: record.tabId,
+            url: record.url,
+            title: record.title,
+            capturedAt: new Date(record.capturedAt).toISOString(),
+            pageNumber: record.pageNumber,
+            evidenceId: record.id,
+          },
+          record.content,
+        ),
+      ).join('\n\n');
+      const msg = '已读取 ' + records.length + ' 条来源证据';
+      await taskRunStore.appendEvent(this.context.taskId, 'evidence.read', {
+        evidenceIds: records.map(record => record.id),
+      }).catch(() => undefined);
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
+      return new ActionResult({ extractedContent: result, success: true, includeInMemory: true });
+    }, readEvidenceActionSchema);
+    actions.push(readEvidence);
+
     const cacheContent = new Action(async (input: z.infer<typeof cacheContentActionSchema.schema>) => {
       const intent = input.intent || t('act_cache_start', [input.content]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
