@@ -427,7 +427,9 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           const pendingWrite: NonNullable<typeof this.context.pendingWrite> = {
             toolName: actionName,
             parameterHash: await hashActionArgs(actionArgs),
-            tabId: browserState.tabId,
+            tabId: actionName === 'close_tab' && actionArgs && typeof actionArgs === 'object' && 'tab_id' in actionArgs
+              ? Number(actionArgs.tab_id)
+              : browserState.tabId,
             url: browserState.url,
             expectedUrl:
               actionName === 'go_to_url' && actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs
