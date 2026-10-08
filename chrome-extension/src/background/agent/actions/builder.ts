@@ -626,7 +626,6 @@ export class ActionBuilder {
       const page = await this.context.browserContext.getCurrentPage();
       const tabInfo = await chrome.tabs.get(page.tabId);
       const tabUrl = tabInfo.url || '';
-      let pdfExtractionFailed = false;
       let pdfAttempted = false;
 
       // 路线二(主路线):PDF → 读取字节 + pdf.js 提取文本层；纯扫描件再走视觉模型。
@@ -668,11 +667,9 @@ export class ActionBuilder {
               includeInMemory: true,
             });
           }
-          pdfExtractionFailed = true; // 文本层为空(纯扫描件)→ 继续走截屏视觉
           logger.info('PDF 无文本层(纯扫描件),回退到截图识别');
         } catch (pdfError) {
           logger.warning('PDF 文本层提取失败,回退到截图识别:', pdfError);
-          pdfExtractionFailed = true;
         }
       }
 
