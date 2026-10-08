@@ -1,17 +1,27 @@
 import type { PlanStep } from '@extension/storage';
 
+const MAX_PLAN_STEPS = 50;
+
 export function normalizePlanSteps(steps: PlanStep[] | undefined, nextSteps: string): PlanStep[] {
-  if (steps && steps.length) return steps;
-  return nextSteps.split(/\n|;|(?<=\d\.)\s+/).map(s => s.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim()).filter(Boolean).map((title, i) => ({
-    id: 'step-' + (i + 1),
-    title,
-    successCriteria: '完成：' + title,
-    status: i === 0 ? 'running' : 'queued',
-    evidenceIds: [],
-  }));
+  const source = steps && steps.length ? steps : nextSteps
+    .split(/
+|;|(?<=d\.)\s+/)
+    .map(s => s.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
+    .filter(Boolean)
+    .map((title, i) => ({
+      id: 'step-' + (i + 1),
+      title,
+      successCriteria: '完成：' + title,
+      status: i === 0 ? 'running' as const : 'queued' as const,
+      evidenceIds: [] as string[],
+    }));
+
+  if (source.length > MAX_PLAN_STEPS) throw new Error('Plan exceeds maximum step count');
+  return source;
 }
 
 export function validatePlanSteps(steps: PlanStep[]): void {
+  if (steps.length > MAX_PLAN_STEPS) throw new Error('Plan exceeds maximum step count');
   const ids = new Set<string>();
   for (const step of steps) {
     if (!step.id || ids.has(step.id)) throw new Error('Plan step ids must be unique');
@@ -34,10 +44,20 @@ export function advancePlan(steps: PlanStep[], succeeded: boolean): PlanStep[] {
 }
 
 export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[] {
-  const previousById = new Map(previous.map(step => [step.id, step]));
-  return incoming.map(step => {
-    const old = previousById.get(step.id);
+  validatePlanSteps(incoming);
+  const incomingById = new Map(incoming.map(step => [step.id, step]));
+  const merged: PlanStep[] = [];
+  for (const old of previous) {
+    if (!incomingById.has(old.id)) merged.push({ ...old, evidenceIds: [...old.evidenceIds] });
+  }
+  for (const step of incoming) {
+    const old = previous.find(item => item.id === step.id);
     const status = old?.status === 'completed' ? 'completed' : step.status;
-    return { ...step, status, evidenceIds: [...new Set([...(old?.evidenceIds ?? []), ...step.evidenceIds])] };
-  });
+    merged.push({
+      ...step,
+      status,
+      evidenceIds: [...new Set([...(old?.evidenceIds ?? []), ...step.evidenceIds])],
+    });
+  }
+  return merged.slice(0, MAX_PLAN_STEPS);
 }
