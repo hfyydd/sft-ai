@@ -309,11 +309,13 @@ export default class BrowserContext {
     const tabInfos: TabInfo[] = [];
 
     for (const tab of tabs) {
-      if (tab.id && tab.url && tab.title) {
+      // 放宽上游过滤:加载中的标签页 title 可能为空(如本地 PDF),只要求 id+url;
+      // 扩展自身的页面(侧边栏等)对模型无意义,跳过
+      if (tab.id && tab.url && !tab.url.startsWith('chrome-extension://')) {
         tabInfos.push({
           id: tab.id,
           url: tab.url,
-          title: tab.title,
+          title: tab.title || tab.url,
         });
       }
     }
