@@ -181,10 +181,12 @@ export class ActionBuilder {
     title: string,
     text: string,
     startPage: number,
+    evidenceIds: string[] = [],
   ) {
     const re = /--- 第 (\d+) 页 ---\n([\s\S]*?)(?=\n--- 第 \d+ 页 ---\n|$)/g;
     const chunks: string[] = [];
     let match: RegExpExecArray | null;
+    let chunkIndex = 0;
     while ((match = re.exec(text))) {
       chunks.push(
         formatPageEvidence(
@@ -212,15 +214,21 @@ export class ActionBuilder {
     return chunks.join('\n\n');
   }
 
-  private async persistPdfEvidence(tabId: number, url: string, title: string, text: string, startPage: number) {
+  private async persistPdfEvidence(tabId: number, url: string, title: string, text: string, startPage: number): Promise<string[]> {
     const re = /(?:^|\n)--- 第 (\d+) 页 ---\n([\s\S]*?)(?=\n--- 第 \d+ 页 ---\n|$)/g;
     let match: RegExpExecArray | null;
     let found = false;
+    const evidenceIds: string[] = [];
     while ((match = re.exec(text))) {
       found = true;
-      await this.persistEvidence('pdf', tabId, url, title, match[2].trim(), Number(match[1]));
+      const evidenceId = await this.persistEvidence('pdf', tabId, url, title, match[2].trim(), Number(match[1]));
+      if (evidenceId) evidenceIds.push(evidenceId);
     }
-    if (!found) await this.persistEvidence('pdf', tabId, url, title, text, startPage);
+    if (!found) {
+      const evidenceId = await this.persistEvidence('pdf', tabId, url, title, text, startPage);
+      if (evidenceId) evidenceIds.push(evidenceId);
+    }
+    return evidenceIds;
   }
 
   private async persistEvidence(source:'dom'|'pdf'|'vision'|'cache', tabId:number, url:string, title:string, content:string, pageNumber?:number){
