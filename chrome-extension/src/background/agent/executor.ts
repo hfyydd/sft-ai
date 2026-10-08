@@ -107,6 +107,11 @@ export class Executor {
     this.context.plan = [...checkpoint.plan];
     this.context.taskMemory.loadFacts(checkpoint.memory);
     this.context.approvedAction = checkpoint.approvedAction;
+    this.context.pendingWrite = checkpoint.pendingWrite;
+    if (checkpoint.nSteps !== undefined) this.context.nSteps = checkpoint.nSteps;
+    if (checkpoint.replanCount !== undefined) this.context.replanCount = checkpoint.replanCount;
+    if (checkpoint.startedAt !== undefined) this.context.startedAt = checkpoint.startedAt;
+    if (checkpoint.finalAnswer !== undefined) this.context.finalAnswer = checkpoint.finalAnswer;
   }
 
   getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
@@ -221,13 +226,12 @@ export class Executor {
    */
   async execute(): Promise<void> {
     logger.info(`🚀 Executing task: ${this.tasks[this.tasks.length - 1]}`);
-    // reset the step counter
     const context = this.context;
-    context.nSteps = 0;
+    const isFreshRun = context.nSteps === 0 && context.replanCount === 0 && context.finalAnswer === null;
+    if (isFreshRun) context.startedAt = Date.now();
     const allowedMaxSteps = this.context.options.maxSteps;
 
     try {
-      this.context.startedAt = Date.now();
       this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_START, this.context.taskId);
 
       // Track task start
