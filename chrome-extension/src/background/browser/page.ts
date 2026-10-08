@@ -1098,6 +1098,15 @@ export default class Page {
     return null;
   }
 
+  async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
+    const element = await this.locateElement(elementNode);
+    if (!element) return false;
+    return element.evaluate((el, value) => {
+      const actual = 'value' in el ? String((el as HTMLInputElement).value ?? '') : (el.textContent ?? '');
+      return actual === value;
+    }, expected);
+  }
+
   async inputTextElementNode(useVision: boolean, elementNode: DOMElementNode, text: string): Promise<void> {
     if (!this._puppeteerPage) {
       throw new Error('Puppeteer is not connected');
