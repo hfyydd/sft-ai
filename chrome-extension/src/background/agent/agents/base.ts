@@ -262,8 +262,12 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
   }
 
   /** Agent Loop v2:从 tool_calls 参数中兜底提取结构化输出 */
-  protected salvageFromToolCalls(raw: any): this['ModelOutput'] | undefined {
-    const calls = raw?.additional_kwargs?.tool_calls || raw?.tool_calls;
+  protected salvageFromToolCalls(raw: unknown): this['ModelOutput'] | undefined {
+    const candidate = raw && typeof raw === 'object' ? (raw as {
+      additional_kwargs?: { tool_calls?: Array<{ function?: { arguments?: unknown } }> };
+      tool_calls?: Array<{ function?: { arguments?: unknown } }>;
+    }) : {};
+    const calls = candidate.additional_kwargs?.tool_calls || candidate.tool_calls;
     const argsStr = calls?.[0]?.function?.arguments;
     if (typeof argsStr !== 'string' || !argsStr.trim()) return undefined;
     try {
@@ -289,7 +293,7 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
       let m: RegExpExecArray | null;
       while ((m = re.exec(cleanedContent))) {
         const name = m[1];
-        let rawVal = m[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
+        const rawVal = m[2].replace(/<\/｜｜DSML｜｜ parameter>\s*$/, '').trim();
         try {
           obj[name] = JSON.parse(rawVal);
         } catch {
