@@ -152,19 +152,11 @@ chrome.runtime.onConnect.addListener(port => {
 
             await browserContext.switchTab(message.tabId);
             const run = await taskRunStore.getRun(message.taskId).catch(() => undefined);
-            if (!run) {
-              return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
-            }
-            if (run.status === 'interrupted' || run.status === 'paused') {
-              await runController.recover(run.id);
-              currentExecutor = runController.getExecutor();
-            }
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: '任务执行器不可用，请先恢复任务' });
-            currentExecutor.addFollowUpTask(message.task);
-            await taskRunStore.appendEvent(run.id, 'task.follow_up', { task: message.task });
-            await taskRunStore.updateStatus(run.id, 'running');
-            subscribeToExecutorEvents(currentExecutor);
-            void currentExecutor.execute();
+            if (!run) return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
+
+            await runController.continueWithFollowUp(run.id, message.task);
+            currentExecutor = runController.getExecutor();
+            if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
             break;
           }
 
@@ -239,29 +231,33 @@ chrome.runtime.onConnect.addListener(port => {
           }
 
           case 'cancel_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
-            await currentExecutor.cancel();
-            break;
+            try {
+              await runController.cancel();
+              currentExecutor = null;
+              return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_errors_noRunningTask') });
+            }
           }
 
           case 'resume_task': {
-            if (currentExecutor) {
-              await currentExecutor.resume();
-              return port.postMessage({ type: 'success' });
-            }
-            if (message.taskId) {
-              await runController.recover(message.taskId);
+            try {
+              await runController.resume(message.taskId);
               currentExecutor = runController.getExecutor();
               if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
               return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_cmd_resumeTask_noTask') });
             }
-            return port.postMessage({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
           }
 
           case 'pause_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
-            await currentExecutor.pause();
-            return port.postMessage({ type: 'success' });
+            try {
+              await runController.pause();
+              return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_errors_noRunningTask') });
+            }
           }
 
           case 'screenshot': {
@@ -337,26 +333,17 @@ chrome.runtime.onConnect.addListener(port => {
           case 'replay': {
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
             if (!message.taskId) return port.postMessage({ type: 'error', error: t('bg_errors_noTaskId') });
-            if (!message.historySessionId)
-              return port.postMessage({ type: 'error', error: t('bg_cmd_replay_noHistory') });
-            logger.info('replay', message.tabId, message.taskId, message.historySessionId);
-
+            if (!message.historySessionId) return port.postMessage({ type: 'error', error: t('bg_cmd_replay_noHistory') });
             try {
-              // Switch to the specified tab
               await browserContext.switchTab(message.tabId);
-              // Setup executor with the new taskId and a dummy task description
-              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
-              subscribeToExecutorEvents(currentExecutor);
-
-              // Run replayHistory with the history session ID
-              const result = await currentExecutor.replayHistory(message.historySessionId);
-              logger.debug('replay execution result', message.tabId, result);
+              const existing = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+              if (existing) return port.postMessage({ type: 'error', error: '回放任务已经存在' });
+              await runController.startReplay(message.taskId, message.historySessionId, message.task || ('Replay ' + message.historySessionId), message.tabId);
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
             } catch (error) {
               logger.error('Replay failed:', error);
-              return port.postMessage({
-                type: 'error',
-                error: error instanceof Error ? error.message : t('bg_cmd_replay_failed'),
-              });
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_cmd_replay_failed') });
             }
             break;
           }
