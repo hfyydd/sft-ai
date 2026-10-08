@@ -161,9 +161,10 @@ export class Executor {
   private checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): boolean {
     if (planOutput?.result?.done) {
       const steps = planOutput.result.steps ?? [];
+      const missingPlan = planOutput.result.web_task === true && steps.length === 0;
       const invalidStatus = steps.some(step => !['completed','skipped'].includes(step.status));
       const missingEvidence = planOutput.result.web_task && steps.some(step => step.status === 'completed' && step.evidenceIds.length === 0);
-      const invalid = invalidStatus || missingEvidence;
+      const invalid = missingPlan || invalidStatus || missingEvidence;
       if (invalid) {
         logger.info('Planner marked done but required plan steps remain incomplete');
         return false;
