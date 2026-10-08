@@ -94,6 +94,10 @@ export interface TaskCheckpoint {
   evidenceIds: string[];
   activeTabId?: number;
   navigatorState?: unknown;
+  nSteps?: number;
+  replanCount?: number;
+  startedAt?: number;
+  finalAnswer?: string | null;
 }
 
 export interface TaskRunSnapshot {
