@@ -10,9 +10,9 @@ const logger = createLogger('Skills');
  * Skill text is user-configured (extension owner), i.e. trusted instructions —
  * unlike page content, which is wrapped as untrusted data elsewhere.
  */
-export async function getSkillsSystemInstructions(): Promise<string> {
+export async function getSkillsSystemInstructions(selectedSkillIds: string[] = []): Promise<string> {
   try {
-    const skills = (await skillStore.getSkills()).filter(s => s.enabled && s.mode === 'always');
+    const skills = (await skillStore.getSkills()).filter(s => s.enabled && (s.mode === 'always' || selectedSkillIds.includes(s.id)));
     if (skills.length === 0) {
       return '';
     }
