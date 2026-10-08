@@ -23,6 +23,7 @@ import { extractPdfTextFromUrl } from './agent/pdf';
 import { buildToolPolicy } from './services/toolPolicy';
 import { taskRunStore } from '@extension/storage';
 import { runController } from './task/run-controller';
+import { resolveApproval } from './task/approval-gate';
 
 const logger = createLogger('background');
 
@@ -122,7 +123,7 @@ chrome.runtime.onConnect.addListener(port => {
             if (!run) {
               await runController.createAndStart({
                 runId: message.taskId,
-                sessionId: message.sessionId || message.taskId,
+                sessionId: message.taskId,
                 goal: message.task,
                 tabId: message.tabId,
                 createExecutor: async taskRun => {
@@ -161,6 +162,20 @@ chrome.runtime.onConnect.addListener(port => {
               logger.info('new_task execution result', message.tabId, result);
             }
             break;
+          }
+
+          case 'approve_action':
+          case 'reject_action': {
+            if (!message.runId || !message.nonce || !message.parameterHash) {
+              return port.postMessage({ type: 'error', error: 'Invalid approval request' });
+            }
+            const ok = await resolveApproval({
+              runId: message.runId,
+              nonce: message.nonce,
+              parameterHash: message.parameterHash,
+              approved: message.type === 'approve_action',
+            });
+            return port.postMessage({ type: ok ? 'success' : 'error', error: ok ? undefined : 'Approval is stale or invalid' });
           }
 
           case 'cancel_task': {
