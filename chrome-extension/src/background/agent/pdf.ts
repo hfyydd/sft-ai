@@ -137,3 +137,16 @@ export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOpt
   const data = new Uint8Array(await res.arrayBuffer());
   return extractPdfData(data, options);
 }
+
+export function decodeBase64ToBytes(base64:string):Uint8Array {
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return bytes;
+}
+
+export async function extractPdfTextFromBytes(data:Uint8Array,options?:PdfExtractOptions){
+  const maxBytes=10*1024*1024;
+  if(data.byteLength>maxBytes) throw new Error(`PDF 文件超过 ${maxBytes} 字节限制`);
+  return extractPdfData(data,options);
+}
