@@ -455,10 +455,23 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           this.context.pendingWrite = pendingWrite;
         }
 
+        const actionParameterHash = await this.hashActionArgs(actionArgs);
+        await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
+          toolName: actionName,
+          parameterHash: actionParameterHash,
+          step: this.context.nSteps,
+        }).catch(() => undefined);
+
         const result = await actionInstance.call(actionArgs);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
         }
+        await taskRunStore.appendEvent(this.context.taskId, 'tool.completed', {
+          toolName: actionName,
+          parameterHash: actionParameterHash,
+          success: result.success !== false && !result.error,
+          step: this.context.nSteps,
+        }).catch(() => undefined);
         if (PENDING_WRITE_TOOLS.has(actionName)) {
           this.context.pendingWrite = undefined;
         }
