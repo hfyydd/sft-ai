@@ -191,6 +191,31 @@ chrome.runtime.onConnect.addListener(port => {
             }
           }
 
+          case 'subscribe_run': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            const run = await taskRunStore.getRun(message.runId);
+            if (!run) return port.postMessage({ type: 'error', error: 'Unknown task run' });
+            const executor = runController.getExecutor();
+            if (executor && runController.getRunId() === message.runId) {
+              if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
+              uiExecutorUnsubscribe = subscribeToExecutorEvents(executor);
+            }
+            const snapshot = await runController.snapshot(message.runId, Number(message.afterSequence || 0));
+            for (const event of snapshot.events) {
+              port.postMessage({
+                type: 'run_event',
+                event: {
+                  type: ExecutionState.TASK_START ? 'execution' : 'execution',
+                  actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload ? (event.payload as any).actor : 'system',
+                  state: event.type,
+                  data: event.payload && typeof event.payload === 'object' && 'data' in event.payload ? (event.payload as any).data : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
+                  timestamp: event.timestamp,
+                },
+              });
+            }
+            return port.postMessage({ type: 'subscribed_run', runId: message.runId });
+          }
+
           case 'cancel_task': {
             if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
             await currentExecutor.cancel();
