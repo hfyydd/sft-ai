@@ -12,6 +12,7 @@ import { TaskPlanPanel } from './components/TaskPlanPanel';
 import { TaskTimeline } from './components/TaskTimeline';
 import { EvidenceList, type EvidenceItem } from './components/EvidenceList';
 import { ApprovalCard } from './components/ApprovalCard';
+import { UserRequestCard } from './components/UserRequestCard';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -38,6 +39,7 @@ const SidePanel = () => {
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
   const [approvalAction, setApprovalAction] = useState<any | null>(null);
+  const [userRequest, setUserRequest] = useState<any | null>(null);
   const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
   const [runEvidence, setRunEvidence] = useState<EvidenceItem[]>([]);
   const [manualSkills, setManualSkills] = useState<Skill[]>([]);
@@ -387,6 +389,7 @@ const SidePanel = () => {
           const snapshotEvents = message.snapshot?.events || [];
           lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
           if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
+          if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
         } else if (message && message.type === 'run_event') {
           const event = message.event;
           if (event?.runId === sessionIdRef.current && event.sequence > lastRunSequenceRef.current) {
@@ -396,6 +399,8 @@ const SidePanel = () => {
           if (event) handleTaskState(event);
         } else if (message && message.type === 'approval_required') {
           setApprovalAction(message.action);
+        } else if (message && message.type === 'user_intervention_required') {
+          setUserRequest(message.request);
         } else if (message && message.type === 'run_evidence') {
           setRunEvidence(message.evidence || []);
         } else if (message && message.type === 'error') {
@@ -1135,6 +1140,15 @@ const SidePanel = () => {
                     </>
                   )}
                 </div>
+                {userRequest && (
+                  <UserRequestCard
+                    request={userRequest}
+                    onSubmit={answer => {
+                      portRef.current?.postMessage({ type: 'user_intervention_response', runId: userRequest.runId, nonce: userRequest.nonce, answer });
+                      setUserRequest(null);
+                    }}
+                  />
+                )}
                 {approvalAction && (
                   <ApprovalCard
                     action={approvalAction}
