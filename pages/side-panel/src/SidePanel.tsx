@@ -400,7 +400,7 @@ const SidePanel = () => {
             lastRunSequenceRef.current = event.sequence;
             setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), event].slice(-500) } : prev);
           }
-          if (event) handleTaskState(event);
+          // Durable replay events are shown in the runtime timeline; chat messages are restored from chat history.
         } else if (message && message.type === 'approval_required') {
           setApprovalAction(message.action);
         } else if (message && message.type === 'user_intervention_required') {
