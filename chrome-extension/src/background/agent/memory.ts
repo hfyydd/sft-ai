@@ -1,42 +1,51 @@
+import type { MemoryFact } from '@extension/storage';
 import { createLogger } from '../log';
 
 const logger = createLogger('TaskMemory');
 
-/**
- * Agent Loop v2 工作记忆(scratchpad):
- * 跨步骤 / 跨页面保存关键事实(采集到的数据、页面结论、失败教训),
- * 由规划器通过 memory_write 字段写入,注入到规划器与导航器的状态消息中,
- * 使长链路多页面任务不会"遗忘"此前步骤的成果。
- */
 export class TaskMemory {
-  private facts: string[] = [];
+  private facts: MemoryFact[] = [];
   private readonly maxFacts: number;
   private readonly maxFactLength: number;
 
-  constructor(maxFacts = 20, maxFactLength = 400) {
+  constructor(maxFacts = 40, maxFactLength = 600) {
     this.maxFacts = maxFacts;
     this.maxFactLength = maxFactLength;
   }
 
-  add(fact: string): void {
-    const trimmed = (fact || '').trim();
+  add(content: string, evidenceIds: string[] = [], stepId?: string): void {
+    const trimmed = (content || '').trim();
     if (!trimmed) return;
     const compact = trimmed.length > this.maxFactLength ? trimmed.slice(0, this.maxFactLength) + '…' : trimmed;
-    if (this.facts[this.facts.length - 1] === compact) return;
-    this.facts.push(compact);
+    const prev = this.facts[this.facts.length - 1];
+    if (prev?.content === compact && JSON.stringify(prev.evidenceIds) === JSON.stringify(evidenceIds)) return;
+    this.facts.push({ id: crypto.randomUUID(), content: compact, evidenceIds: [...evidenceIds], createdAt: Date.now(), stepId });
     if (this.facts.length > this.maxFacts) {
       const dropped = this.facts.shift();
-      logger.debug('Working memory evicted oldest fact:', dropped);
+      logger.debug('Working memory evicted oldest fact:', dropped?.id);
     }
   }
 
-  getFacts(): string[] { return [...this.facts]; }
+  addFact(fact: MemoryFact): void {
+    if (!fact.content?.trim()) return;
+    this.facts.push({ ...fact, evidenceIds: [...fact.evidenceIds], content: fact.content.slice(0, this.maxFactLength) });
+    while (this.facts.length > this.maxFacts) this.facts.shift();
+  }
 
-  loadFacts(facts: string[]): void { this.facts = []; facts.forEach(f => this.add(f)); }
+  loadFacts(facts: MemoryFact[] | string[]): void {
+    this.facts = [];
+    for (const fact of facts) {
+      if (typeof fact === 'string') this.add(fact);
+      else this.addFact(fact);
+    }
+  }
 
-  /** 序列化为编号清单;空记忆返回空串(不注入)。 */
+  getFacts(): MemoryFact[] {
+    return this.facts.map(f => ({ ...f, evidenceIds: [...f.evidenceIds] }));
+  }
+
   serialize(): string {
     if (this.facts.length === 0) return '';
-    return this.facts.map((f, i) => `${i + 1}. ${f}`).join('\n');
+    return this.facts.map((f, i) => (i + 1) + '. ' + f.content + (f.evidenceIds.length ? ' [evidence: ' + f.evidenceIds.join(', ') + ']' : '')).join('\n');
   }
 }
