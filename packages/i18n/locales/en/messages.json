@@ -1051,5 +1051,4 @@
   "options_general_taskRunRetentionDays_desc": {"message":"Finished task records older than this will be removed."},
   "options_general_taskRunMaxTerminalRuns": {"message":"Maximum finished task records"},
   "options_general_taskRunMaxTerminalRuns_desc": {"message":"Keep at most this many finished task runs in IndexedDB."},
-
 }
