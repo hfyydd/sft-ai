@@ -58,6 +58,7 @@ export class TaskRunStore {
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints','evidence'],'readwrite');const runReq=tx.objectStore('runs').get(cp.runId);
       runReq.onsuccess=()=>{const run=normalizeRun(runReq.result as TaskRun|undefined);if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
+        if (run.checkpointVersion > cp.sequence) { tx.abort(); reject(new Error('Stale checkpoint')); return; }
         if(!checkpointIsValid(run,cp.sequence)){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});
       };tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
     });db.close();
