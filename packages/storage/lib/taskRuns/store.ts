@@ -6,6 +6,7 @@ const normalizeRun = (run: TaskRun | undefined): TaskRun | undefined => run ? { 
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 export const MAX_EVENT_BYTES_PER_RUN = 2 * 1024 * 1024;
 export const MAX_EVIDENCE_BYTES_PER_RUN = 5 * 1024 * 1024;
+export const MAX_EVIDENCE_BYTES_PER_RECORD = 64 * 1024;
 export function nextTaskRunEventSequence(run: TaskRun): number {
   return (run.lastEventSequence ?? 0) + 1;
 }
@@ -93,9 +94,13 @@ export class TaskRunStore {
   async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(normalizeRun(c.value)!);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
   async markInterrupted(){const runs=await this.listActiveRuns();return Promise.all(runs.filter(r=>r.status==='running').map(r=>this.updateStatus(r.id,'interrupted')));}
   async addEvidence(evidence: EvidenceRecord){
+    const bytes = new TextEncoder().encode(evidence.content).byteLength;
+    const maxChars = bytes > MAX_EVIDENCE_BYTES_PER_RECORD
+      ? Math.max(1000, Math.floor(evidence.content.length * MAX_EVIDENCE_BYTES_PER_RECORD / bytes))
+      : evidence.content.length;
     const bounded = {
       ...evidence,
-      content: evidence.content.length > 50000 ? evidence.content.slice(0, 50000) + '\n…[证据已截断]' : evidence.content,
+      content: evidence.content.slice(0, maxChars) + (maxChars < evidence.content.length ? '\n…[证据已截断]' : ''),
     };
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');tx.objectStore('evidence').put(bounded);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
