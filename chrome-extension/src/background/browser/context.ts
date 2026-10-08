@@ -119,8 +119,10 @@ export default class BrowserContext {
         activeTab = tab;
       }
       logger.info('active tab', activeTab.id, activeTab.url, activeTab.title);
+      this.assertUrlAllowed(activeTab.url || '');
       const page = await this._getOrCreatePage(activeTab);
-      await this.attachPage(page);
+      const attached = await this.attachPage(page);
+      if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
       this._currentTabId = activeTab.id || null;
       return page;
     }
@@ -129,9 +131,10 @@ export default class BrowserContext {
     const existingPage = this._attachedPages.get(this._currentTabId);
     if (!existingPage) {
       const tab = await chrome.tabs.get(this._currentTabId);
+      this.assertUrlAllowed(tab.url || '');
       const page = await this._getOrCreatePage(tab);
-      // set current tab id to null if the page is not attached successfully
-      await this.attachPage(page);
+      const attached = await this.attachPage(page);
+      if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
       return page;
     }
 
