@@ -84,7 +84,7 @@ export async function resolveApproval(input: {
     const tab = await chrome.tabs.get(action.tabId).catch(() => null);
     if (!tab?.id || (action.url && tab.url !== action.url)) {
       pending.delete(input.nonce);
-      resolve(false);
+      if (resolve) resolve(false);
       await taskRunStore.appendEvent(input.runId, 'approval.invalidated', { nonce: input.nonce, reason: 'tab_or_url_changed' });
       await taskRunStore.updateStatus(input.runId, 'waiting_user');
       return false;
@@ -105,7 +105,7 @@ export async function resolveApproval(input: {
   } else {
     await clearPending(input.runId, event.sequence, checkpoint);
     await taskRunStore.updateStatus(input.runId, 'cancelled');
-    resolve(false);
+    if (resolve) resolve(false);
   }
   return true;
 }
