@@ -50,6 +50,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     activeTabId: input.tabId,
     navigatorState: current?.navigatorState,
     pendingAction: action,
+    pendingWrite: current?.pendingWrite,
   });
 
   void chrome.runtime.sendMessage({ type: 'approval_required', action }).catch(() => undefined);
