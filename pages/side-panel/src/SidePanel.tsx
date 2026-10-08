@@ -168,6 +168,27 @@ const SidePanel = () => {
     loadGeneralSettings();
   }, [checkModelConfiguration, loadGeneralSettings]);
 
+  useEffect(() => {
+    let cancelled = false;
+    const loadManualSkills = async () => {
+      try {
+        const skills = (await skillStore.getSkills()).filter(skill => skill.enabled && skill.mode === 'manual');
+        if (!cancelled) {
+          setManualSkills(skills);
+          setSelectedSkillIds(prev => prev.filter(id => skills.some(skill => skill.id === id)));
+        }
+      } catch (error) {
+        console.error('Failed to load manual skills:', error);
+      }
+    };
+    void loadManualSkills();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+
   // Re-check model configuration when the side panel becomes visible again
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -390,10 +411,14 @@ const SidePanel = () => {
       portRef.current.onMessage.addListener((message: any) => {
         // Add type checking for message
         if (message && message.type === EventType.EXECUTION) {
-          if (message.data?.taskId === sessionIdRef.current) {
-            lastRunSequenceRef.current += 1;
-            const runtimeEvent = { ...message, sequence: lastRunSequenceRef.current };
-            setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), runtimeEvent].slice(-500) } : prev);
+          if (message.data?.taskId === sessionIdRef.current && message.runtimeEvent && typeof message.sequence === 'number') {
+            if (message.sequence > lastRunSequenceRef.current) {
+              lastRunSequenceRef.current = message.sequence;
+              const runtimeEvent = { ...message };
+              setRunSnapshot((prev: any) =>
+                prev ? { ...prev, events: [...(prev.events || []).filter((e: any) => e.sequence !== message.sequence), runtimeEvent].sort((a: any,b: any) => a.sequence-b.sequence).slice(-500) } : prev,
+              );
+            }
           }
           handleTaskState(message);
         } else if (message && message.type === 'run_snapshot') {
