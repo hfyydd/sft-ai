@@ -30,6 +30,10 @@ export class TaskMemory {
     }
   }
 
+  getFacts(): string[] { return [...this.facts]; }
+
+  loadFacts(facts: string[]): void { this.facts = []; facts.forEach(f => this.add(f)); }
+
   /** 序列化为编号清单;空记忆返回空串(不注入)。 */
   serialize(): string {
     if (this.facts.length === 0) return '';
