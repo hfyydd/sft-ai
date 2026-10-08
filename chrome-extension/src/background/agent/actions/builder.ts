@@ -32,8 +32,18 @@ import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
 import { extractPdfTextFromUrl } from '../pdf';
+import { requestApproval } from '../../task/approval-gate';
 
 const logger = createLogger('Action');
+
+const SENSITIVE_INTENT = /(提交|删除|购买|支付|付款|发送|授权|下载|保存|确认|结算|下单|注销|关闭账号|submit|delete|purchase|pay|checkout|send|authorize|download)/i;
+
+const needsApproval = (toolName:string, intent:string, args:unknown) => {
+  if (toolName === 'close_tab') return true;
+  if (toolName === 'click_element' || toolName === 'send_keys' || toolName === 'select_dropdown_option') return SENSITIVE_INTENT.test(intent);
+  if (toolName === 'input_text') return SENSITIVE_INTENT.test(intent);
+  return false;
+};
 
 export class InvalidInputError extends Error {
   constructor(message: string) {
@@ -233,6 +243,19 @@ export class ActionBuilder {
         const intent = input.intent || t('act_click_start', [input.index.toString()]);
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
+        if (needsApproval('click_element', intent, input)) {
+          const pageForApproval = await this.context.browserContext.getCurrentPage();
+          const approved = await requestApproval({
+            runId: this.context.taskId,
+            toolName: 'click_element',
+            args: input,
+            tabId: pageForApproval.tabId,
+            url: pageForApproval.url(),
+            reason: intent,
+          });
+          if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
+        }
+
         const page = await this.context.browserContext.getCurrentPage();
         const state = await page.getState();
 
@@ -331,6 +354,16 @@ export class ActionBuilder {
     const closeTab = new Action(async (input: z.infer<typeof closeTabActionSchema.schema>) => {
       const intent = input.intent || t('act_closeTab_start', [input.tab_id.toString()]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+      const pageForApproval = await this.context.browserContext.getCurrentPage();
+      const approved = await requestApproval({
+        runId: this.context.taskId,
+        toolName: 'close_tab',
+        args: input,
+        tabId: pageForApproval.tabId,
+        url: pageForApproval.url(),
+        reason: intent,
+      });
+      if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
       await this.context.browserContext.closeTab(input.tab_id);
       const msg = t('act_closeTab_ok', [input.tab_id.toString()]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
