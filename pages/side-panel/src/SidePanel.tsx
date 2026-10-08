@@ -443,6 +443,11 @@ const SidePanel = () => {
           handleTaskState(message);
         } else if (message && message.type === 'run_snapshot') {
           setRunSnapshot(message.snapshot);
+          setSelectedSkillIds(message.snapshot?.run?.skillIds ?? []);
+          if (['completed','failed','cancelled'].includes(message.snapshot?.run?.status)) {
+            setApprovalAction(null);
+            setUserRequest(null);
+          }
           const snapshotEvents = message.snapshot?.events || [];
           lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
           setTimelineHasMore(snapshotEvents.length > 0 && snapshotEvents[0].sequence > 1);
