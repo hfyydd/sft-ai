@@ -61,6 +61,14 @@ export interface TaskRunEvent {
   payload: unknown;
 }
 
+export interface PendingFileReadRequest {
+  runId: string;
+  requestId: string;
+  path: string;
+  tabId: number;
+  expiresAt: number;
+}
+
 export interface PendingUserRequest {
   runId: string;
   question: string;
@@ -78,6 +86,7 @@ export interface TaskCheckpoint {
   approvedAction?: PendingAction;
   pendingWrite?: PendingWrite;
   pendingUserRequest?: PendingUserRequest;
+  pendingFileRead?: PendingFileReadRequest;
   memory: MemoryFact[];
   evidenceIds: string[];
   activeTabId?: number;
