@@ -210,7 +210,12 @@ export class RunController {
     }
     await taskRunStore.updateStatus(runId, 'interrupted');
     await taskRunStore.appendEvent(runId, 'runtime.debugger_detached', { tabId, reason });
-    await this.executor?.pause().catch(() => undefined);
+    if (this.executor) {
+      await this.executor.cleanup().catch(() => undefined);
+      this.executorSubscription?.();
+      this.executorSubscription = null;
+      this.executor = null;
+    }
   }
 
   async pause() {
