@@ -36,7 +36,21 @@ export class TaskMemory {
   }
 
   addFact(fact: MemoryFact): void {
-    this.add(fact.content, fact.evidenceIds, fact.stepId, fact.confidence);
+    const trimmed = (fact.content || '').trim();
+    if (!trimmed) return;
+    const compact = trimmed.length > this.maxFactLength ? trimmed.slice(0, this.maxFactLength) + '…' : trimmed;
+    const normalized: MemoryFact = {
+      id: fact.id || (globalThis.crypto?.randomUUID?.() ?? 'memory_' + Date.now()),
+      content: compact,
+      evidenceIds: [...new Set(fact.evidenceIds ?? [])].slice(0, 20),
+      createdAt: fact.createdAt || Date.now(),
+      confidence: fact.confidence ?? 'medium',
+      stepId: fact.stepId,
+    };
+    const previous = this.facts[this.facts.length - 1];
+    if (previous?.id === normalized.id) return;
+    this.facts.push(normalized);
+    if (this.facts.length > this.maxFacts) this.facts.shift();
   }
 
   getFacts(): MemoryFact[] {
