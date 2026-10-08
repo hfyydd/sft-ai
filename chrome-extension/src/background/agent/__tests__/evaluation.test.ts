@@ -7,7 +7,14 @@ describe('browser task evaluation', () => {
     const outcome = evaluateTrace(
       'run-1',
       ['url', 'title', 'capturedAt', 'pageNumber'],
-      [],
+      [{
+        id: 'task-ok',
+        runId: 'run-1',
+        sequence: 1,
+        type: 'task.ok',
+        timestamp: 1,
+        payload: {},
+      }],
       [{
         id: 'e1',
         runId: 'run-1',
