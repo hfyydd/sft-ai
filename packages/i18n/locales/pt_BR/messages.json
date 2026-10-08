@@ -966,5 +966,34 @@
         "example": "Opção não encontrada"
       }
     }
-  }
+  },
+  "act_done_start": {"message":"任务完成"},
+  "exec_navigator_start": {"message":"正在执行页面操作…"},
+  "exec_navigator_ok": {"message":"页面操作执行完成"},
+  "exec_navigator_cancel": {"message":"页面操作已取消"},
+  "exec_planner_start": {"message":"正在制定任务计划…"},
+  "exec_planner_fail": {"message":"规划失败:"},
+  "act_done_ok": {"message":"任务已完成"},
+  "act_readPage_start": {"message":"正在读取页面文本…"},
+  "act_readPage_ok": {"message":"已读取页面文本"},
+  "act_readPage_empty": {"message":"页面上没有可见文本"},
+  "act_readPage_fail": {"message":"读取页面文本失败:"},
+  "act_readPage_vision": {"message":"页面无 DOM 文本,正在截屏并用视觉模型识别…"},
+  "act_readPage_vision_ok": {"message":"已通过截图识别页面内容"},
+  "act_readPage_pdf": {"message":"正在解析 PDF 文本层…"},
+  "task_plan": {"message":"Task plan"},
+  "task_timeline": {"message":"Task timeline"},
+  "task_evidence": {"message":"Evidence"},
+  "task_status": {"message":"Status"},
+  "task_pause": {"message":"Pause"},
+  "task_resume": {"message":"Resume"},
+  "task_cancel": {"message":"Cancel"},
+  "task_approval_needed": {"message":"Approval required"},
+  "task_approve_once": {"message":"Approve once"},
+  "task_reject": {"message":"Reject"},
+  "task_user_input_needed": {"message":"Your input is required"},
+  "task_submit_answer": {"message":"Submit answer"},
+  "task_load_earlier": {"message":"Load earlier events"},
+  "task_manual_skills": {"message":"Skills for this task"},
+  "task_no_evidence": {"message":"No persisted evidence; please verify manually."}
 }
