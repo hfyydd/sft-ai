@@ -323,7 +323,19 @@ export class RunController {
     if (!targetId) throw new Error('No active task');
     if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
     if (this.executor && this.activeRunId === targetId) await this.executor.cancel();
-    await taskRunStore.appendEvent(targetId, 'task.cancel', { reason: 'user_command' }).catch(() => undefined);
+    const event = await taskRunStore.appendEvent(targetId, 'task.cancel', { reason: 'user_command' }).catch(() => undefined);
+    const checkpoint = await taskRunStore.getCheckpoint(targetId).catch(() => undefined);
+    if (event && checkpoint) {
+      await taskRunStore.saveCheckpoint({
+        ...checkpoint,
+        sequence: event.sequence,
+        pendingAction: undefined,
+        approvedAction: undefined,
+        pendingWrite: undefined,
+        pendingUserRequest: undefined,
+        pendingFileRead: undefined,
+      }).catch(() => undefined);
+    }
     await taskRunStore.updateStatus(targetId, 'cancelled').catch(() => undefined);
     if (this.activeRunId === targetId && !this.executor) await this.clearIfTerminal();
   }
