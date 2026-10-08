@@ -167,6 +167,41 @@ export class ActionBuilder {
     this.extractorLLM = extractorLLM;
   }
 
+  private formatPdfEvidenceForModel(
+    tabId: number,
+    url: string,
+    title: string,
+    text: string,
+    startPage: number,
+  ) {
+    const re = /--- 第 (\\d+) 页 ---\\n([\\s\\S]*?)(?=\\n--- 第 \\d+ 页 ---\\n|$)/g;
+    const chunks: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(text))) {
+      chunks.push(
+        formatPageEvidence(
+          'pdf',
+          {
+            tabId,
+            url,
+            title,
+            capturedAt: new Date().toISOString(),
+            pageNumber: Number(match[1]),
+          },
+          match[2].trim(),
+        ),
+      );
+    }
+    if (!chunks.length) {
+      return formatPageEvidence(
+        'pdf',
+        { tabId, url, title, capturedAt: new Date().toISOString(), pageNumber: startPage },
+        text,
+      );
+    }
+    return chunks.join('\n\n');
+  }
+
   private async persistPdfEvidence(tabId: number, url: string, title: string, text: string, startPage: number) {
     const re = /(?:^|\n)--- 第 (\d+) 页 ---\n([\s\S]*?)(?=\n--- 第 \d+ 页 ---\n|$)/g;
     let match: RegExpExecArray | null;
