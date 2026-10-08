@@ -67,3 +67,15 @@ export interface TaskRunSnapshot {
   checkpoint?: TaskCheckpoint;
   events: TaskRunEvent[];
 }
+
+export interface EvidenceRecord {
+  id: string;
+  runId: string;
+  source: 'dom' | 'pdf' | 'vision' | 'cache';
+  tabId: number;
+  url: string;
+  title: string;
+  capturedAt: number;
+  pageNumber?: number;
+  content: string;
+}
