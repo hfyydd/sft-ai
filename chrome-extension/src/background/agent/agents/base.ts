@@ -311,8 +311,39 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
     }
 
     try {
-      const extractedJson = extractJsonFromModelOutput(cleanedContent);
-      return this.validateModelOutput(extractedJson);
+      let extractedJson = extractJsonFromModelOutput(cleanedContent);
+
+      // 模型偶发把输出包成 tool_calls 数组:[{name:'AgentOutput', args:{...}}] — 解包 args 后再校验
+      if (
+        Array.isArray(extractedJson) &&
+        extractedJson.length > 0 &&
+        typeof extractedJson[0] === 'object' &&
+        extractedJson[0] !== null &&
+        'args' in extractedJson[0] &&
+        typeof (extractedJson[0] as { name?: unknown }).name === 'string'
+      ) {
+        logger.debug('Unwrapping tool_calls array output');
+        extractedJson = (extractedJson[0] as { args: unknown }).args as Record<string, unknown>;
+      }
+
+      try {
+        return this.validateModelOutput(extractedJson as Record<string, unknown>);
+      } catch (validationError) {
+        // 宽容合并:模型输出可能缺字段,补规划默认值后再校验一次
+        logger.warning('Strict validation failed, retrying with planner defaults', validationError);
+        const merged = {
+          observation: '',
+          challenges: '',
+          done: false,
+          next_steps: '',
+          final_answer: '',
+          reasoning: '',
+          web_task: true,
+          memory_write: '',
+          ...((extractedJson as Record<string, unknown>) || {}),
+        };
+        return this.validateModelOutput(merged as Record<string, unknown>);
+      }
     } catch (error) {
       logger.warning('manuallyParseResponse failed', error);
       return undefined;

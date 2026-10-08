@@ -396,7 +396,7 @@ export class ActionBuilder {
 
       // 路线二(主路线):PDF → 读取字节 + pdf.js 提取文本层(含 OCR 文本层)。
       // 不依赖 PDF 查看器的渲染状态:查看器显示错误页时同样可用
-      if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^https?:/i.test(tabUrl)) {
+      if (/\.pdf(\?|#|$)/i.test(tabUrl) && /^(https?|file):/i.test(tabUrl)) {
         pdfAttempted = true;
         const pdfMsg = t('act_readPage_pdf');
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
@@ -414,55 +414,6 @@ export class ActionBuilder {
           logger.info('PDF 无文本层(纯扫描件),回退到截图识别');
         } catch (pdfError) {
           logger.warning('PDF 文本层提取失败,回退到截图识别:', pdfError);
-          pdfExtractionFailed = true;
-        }
-      }
-
-      // 本地 file:// PDF:SW 无法读 file://,委托扩展页面(侧边栏)读取字节
-      if (/^file:/i.test(tabUrl) && /\.pdf(\?|#|$)/i.test(tabUrl)) {
-        pdfAttempted = true;
-        const pdfMsg = t('act_readPage_pdf');
-        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, pdfMsg);
-        try {
-          const allowed = await chrome.extension.isAllowedFileSchemeAccess();
-          if (!allowed) {
-            const noPermMsg =
-              '读取本地 PDF 需要先开启文件访问权限:已为你打开扩展管理页,请找到 SFT AI 助手,打开「允许访问文件网址」开关后重试。';
-            chrome.tabs.create({ url: 'chrome://extensions/?id=' + chrome.runtime.id });
-            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, noPermMsg);
-            return new ActionResult({ extractedContent: noPermMsg, includeInMemory: true });
-          }
-          const fileBytes = await new Promise<{ ok: boolean; dataBase64?: string; error?: string }>(
-            (resolve, reject) => {
-              try {
-                chrome.runtime.sendMessage({ type: 'read_file_arraybuffer', path: tabUrl }, resp => {
-                  void chrome.runtime.lastError;
-                  resolve(resp || { ok: false, error: 'no responder(侧边栏未开启?)' });
-                });
-              } catch (e) {
-                reject(e);
-              }
-            },
-          );
-          if (!fileBytes.ok) {
-            throw new Error(fileBytes.error || '读取本地文件失败');
-          }
-          const binary = atob(fileBytes.dataBase64!);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          const pdfResult = await extractPdfData(bytes, { cMapUrl: chrome.runtime.getURL('cmaps/') });
-          if (pdfResult.text) {
-            const okMsg = `已解析本地 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
-            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
-            return new ActionResult({
-              extractedContent: okMsg + ':\n' + pdfResult.text,
-              includeInMemory: true,
-            });
-          }
-          pdfExtractionFailed = true; // 无文本层(纯扫描件)→ 继续走截屏视觉
-          logger.info('本地 PDF 无文本层(纯扫描件),回退到截图识别');
-        } catch (pdfError) {
-          logger.warning('本地 PDF 文本层提取失败,回退到截图识别:', pdfError);
           pdfExtractionFailed = true;
         }
       }

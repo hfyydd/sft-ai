@@ -19,6 +19,7 @@ import { SpeechToTextService } from './services/speechToText';
 import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
 import { getSkillsSystemInstructions } from './services/skills';
+import { extractPdfTextFromUrl } from './agent/pdf';
 
 const logger = createLogger('background');
 
@@ -68,10 +69,21 @@ analyticsSettingsStore.subscribe(() => {
 });
 
 // Listen for simple messages (e.g., from options page)
-chrome.runtime.onMessage.addListener(() => {
-  // Handle other message types if needed in the future
-  // Return false if response is not sent asynchronously
-  // return false;
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'debug_pdf_extract' && msg.url) {
+    extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
+      .then(r =>
+        sendResponse({
+          ok: true,
+          numPages: r.numPages,
+          extractedPages: r.extractedPages,
+          chars: r.text.length,
+          head: r.text.slice(0, 300),
+        }),
+      )
+      .catch(e => sendResponse({ ok: false, error: String(e).slice(0, 300) }));
+    return true; // 异步响应
+  }
 });
 
 // Setup connection listener for long-lived connections (e.g., side panel)

@@ -5,6 +5,31 @@
 import { createLogger } from '../log';
 import { EMBEDDED_CMAPS } from './cmaps.generated';
 
+// pdf.js 的 CMap 加载走 isValidFetchUrl + fetch(失败则回退 XHR,而 SW 无 XHR 且只认 http(s))。
+// 这里:1) 垫一个 document.baseURI 供其校验;2) 拦截 cmaps 的 fetch 从内嵌数据返回。
+const CMAP_BASE = 'http://pdf-cmaps.internal/cmaps/';
+(globalThis as Record<string, unknown>).document = (globalThis as Record<string, unknown>).document || {
+  baseURI: CMAP_BASE,
+};
+const originalFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : ((input as Request)?.url ?? '');
+  if (typeof url === 'string' && url.includes('/cmaps/') && url.endsWith('.bcmap')) {
+    const name = url
+      .split('/')
+      .pop()!
+      .replace(/\.bcmap$/, '');
+    const b64 = EMBEDDED_CMAPS[name];
+    if (b64 !== undefined) {
+      const bin = atob(b64);
+      const buf = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+      return Promise.resolve(new Response(buf, { status: 200 }));
+    }
+  }
+  return originalFetch(input as RequestInfo, init);
+}) as typeof globalThis.fetch;
+
 const logger = createLogger('PdfExtract');
 
 export interface PdfExtractResult {
@@ -43,25 +68,6 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.m
 }
 
 /**
- * 内嵌 CMap 工厂:从打包进扩展的 base64 数据读取映射表,
- * 不依赖任何运行时网络/资源加载(SW 环境下 cMapUrl fetch 不可靠)。
- */
-class EmbeddedCMapFactory {
-  constructor(private baseUrl: string) {}
-
-  async fetch({ name }: { name: string }): Promise<{ data: Uint8Array }> {
-    const b64 = EMBEDDED_CMAPS[name];
-    if (!b64) {
-      throw new Error(`CMap not embedded: ${name}`);
-    }
-    const binary = atob(b64);
-    const data = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i);
-    return { data };
-  }
-}
-
-/**
  * 从 PDF 字节提取文本层。
  * - 纯图片扫描件没有文本层,返回空文本(调用方可回退到截图+视觉模型)
  */
@@ -76,11 +82,10 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     isEvalSupported: false, // MV3 CSP 禁 eval,关闭 PostScript 优化器
     useWorkerFetch: false,
     disableFontFace: true, // 只提取文本,不需要字体渲染
-    // 中文 PDF 的 CID 字体需要 CMap 映射表才能解出 Unicode 文本;
-    // 使用内嵌数据工厂,避免运行时 fetch(在 SW 环境不可靠)
-    cMapUrl: 'embedded://',
+    // 中文 PDF 的 CID 字体需要 CMap 映射表才能解出 Unicode 文本
+    // CMap 请求由顶部 fetch 垫片从内嵌数据返回(不发真实网络请求)
+    cMapUrl: CMAP_BASE,
     cMapPacked: true,
-    CMapReaderFactory: EmbeddedCMapFactory,
   }).promise;
 
   const numPages = pdf.numPages;
