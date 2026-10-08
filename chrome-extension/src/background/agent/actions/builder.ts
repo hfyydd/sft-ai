@@ -325,7 +325,14 @@ export class ActionBuilder {
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
       const page = await this.context.browserContext.getCurrentPage();
+      const beforeUrl = page.url();
       await page.goBack();
+      const afterUrl = page.url();
+      if (beforeUrl === afterUrl) {
+        const msg = '后退动作未观察到可验证的导航变化';
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+        return new ActionResult({ error: msg, includeInMemory: true });
+      }
       const msg2 = t('act_goBack_ok');
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2);
       return new ActionResult({
@@ -976,7 +983,16 @@ export class ActionBuilder {
         const approved = await requestApproval({ runId: this.context.taskId, toolName: 'send_keys', args: input, tabId: page.tabId, url: page.url(), reason: intent || input.keys });
         if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
       }
+      const beforeSignature = await page.getObservationSignature();
       await page.sendKeys(input.keys);
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const afterSignature = await page.getObservationSignature();
+      const keysRequiringObservation = /Enter|Return|Backspace|Delete|Tab|Escape|Arrow|Control|Meta|Alt|Shift/i;
+      if (keysRequiringObservation.test(input.keys) && beforeSignature === afterSignature) {
+        const msg = '按键已发送但未观察到页面变化，结果无法确认';
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+        return new ActionResult({ error: msg, sideEffectUnknown: true, includeInMemory: true });
+      }
       const msg = t('act_sendKeys_ok', [input.keys]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
