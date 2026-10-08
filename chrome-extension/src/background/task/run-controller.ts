@@ -42,6 +42,10 @@ export class RunController {
 
   async createAndStart(input: { runId: string; sessionId: string; goal: string; tabId: number; skillIds?: string[]; createExecutor?: RunControllerFactory }) {
     if (this.activeRunId) throw new Error('Another task is already active');
+    const persistedActive = await taskRunStore.listActiveRuns();
+    if (persistedActive.some(existing => existing.id !== input.runId && existing.status !== 'interrupted')) {
+      throw new Error('Another persisted task run is already active');
+    }
     const run = await taskRunStore.createRun({
       id: input.runId, sessionId: input.sessionId, goal: input.goal, activeTabId: input.tabId, skillIds: input.skillIds ?? [],
     });
