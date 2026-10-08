@@ -468,6 +468,7 @@ function subscribeToExecutorEvents(executor: Executor): () => void {
     ) {
       uiExecutorUnsubscribe?.();
       uiExecutorUnsubscribe = null;
+      currentExecutor = null;
       await runController.clearIfTerminal();
     }
   });
