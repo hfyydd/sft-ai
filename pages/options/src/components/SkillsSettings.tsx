@@ -104,7 +104,7 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
         <h2 className={`mb-2 text-xl font-semibold ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>技能</h2>
         <p className={`mb-4 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
           技能是可复用的指令,会注入到 agent 的系统提示中。<b>常驻</b>技能对每个任务生效;<b>手动</b>技能保留备用,
-          会话内选用即将支持。工具白名单目前已保存,执行器强制生效即将上线。
+          会话内可选用。工具白名单由执行器强制生效，且任何 Skill 都不能放宽全局 URL 策略或高影响动作审批。
         </p>
 
         <div className="mb-4 flex flex-wrap gap-2">
@@ -190,7 +190,7 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
             </div>
             <div>
               <label className={`mb-1 block text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                工具白名单(逗号分隔,留空 = 全部工具;强制生效即将支持)
+                工具白名单(逗号分隔,留空 = 全部工具;高风险动作仍需单独审批)
               </label>
               <input
                 className={inputCls}
