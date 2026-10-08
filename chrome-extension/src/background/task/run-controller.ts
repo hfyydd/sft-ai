@@ -278,10 +278,33 @@ export class RunController {
 
   async resume(runId?: string) {
     if (this.executor) {
-      await this.executor.resume();
-      if (this.activeRunId) {
-        await taskRunStore.appendEvent(this.activeRunId, 'task.resume', { reason: 'user_command' });
-        await taskRunStore.updateStatus(this.activeRunId, 'running');
+      const targetId = this.activeRunId;
+      if (runId && targetId && runId !== targetId) throw new Error('Task run mismatch');
+      if (targetId) {
+        const pendingWrite = this.executor.getPendingWrite();
+        if (pendingWrite) {
+          const run = await taskRunStore.getRun(targetId);
+          if (!run) throw new Error('Unknown task run');
+          const verified = this.verifier ? await this.verifier(run, pendingWrite) : false;
+          if (!verified) {
+            await taskRunStore.appendEvent(targetId, 'runtime.recovery_needs_verification', {
+              toolName: pendingWrite.toolName,
+              tabId: pendingWrite.tabId,
+              url: pendingWrite.url,
+            });
+            throw new Error('未确认的浏览器写操作必须先完成后置条件核验');
+          }
+          const event = await taskRunStore.appendEvent(targetId, 'runtime.recovery_verified', {
+            toolName: pendingWrite.toolName,
+            parameterHash: pendingWrite.parameterHash,
+          });
+          this.executor.clearPendingWrite();
+          const checkpoint = await taskRunStore.getCheckpoint(targetId);
+          if (checkpoint) await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined });
+        }
+        await this.executor.resume();
+        await taskRunStore.appendEvent(targetId, 'task.resume', { reason: 'user_command' });
+        await taskRunStore.updateStatus(targetId, 'running');
       }
       return;
     }
