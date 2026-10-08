@@ -72,17 +72,32 @@ runController.configure(
   },
   async (_run, pendingWrite) => {
     if (pendingWrite.tabId === undefined) return false;
-    await browserContext.switchTab(pendingWrite.tabId);
-    const page = await browserContext.getCurrentPage();
 
     if (pendingWrite.toolName === 'close_tab') {
       const tab = await chrome.tabs.get(pendingWrite.tabId).catch(() => null);
       return !tab;
     }
-    if (pendingWrite.toolName === 'go_to_url' || pendingWrite.toolName === 'open_tab') {
-      if (pendingWrite.toolName === 'go_to_url') return pendingWrite.expectedUrl ? page.url() === pendingWrite.expectedUrl : page.url() !== (pendingWrite.url || '');
-      if (pendingWrite.toolName === 'open_tab') return page.url() !== (pendingWrite.url || '');
-      return false;
+
+    const tab = await chrome.tabs.get(pendingWrite.tabId).catch(() => null);
+    if (!tab) return false;
+    await browserContext.switchTab(pendingWrite.tabId);
+    const page = await browserContext.getCurrentPage();
+
+    if (pendingWrite.toolName === 'go_to_url') {
+      return pendingWrite.expectedUrl ? page.url() === pendingWrite.expectedUrl : page.url() !== (pendingWrite.url || '');
+    }
+    if (pendingWrite.toolName === 'open_tab') {
+      const expectedUrl = pendingWrite.expectedUrl;
+      if (!expectedUrl) return false;
+      const tabs = await chrome.tabs.query({});
+      return tabs.some(candidate => {
+        if (!candidate.url) return false;
+        try {
+          return candidate.url === expectedUrl || new URL(candidate.url).hostname === new URL(expectedUrl).hostname;
+        } catch {
+          return false;
+        }
+      });
     }
     if (pendingWrite.toolName === 'click_element' && pendingWrite.index !== undefined) {
       return page.verifyClickEffect(pendingWrite.index, pendingWrite.url || '');
