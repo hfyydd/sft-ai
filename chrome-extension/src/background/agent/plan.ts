@@ -60,7 +60,7 @@ export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[
   for (const old of previous) {
     if (!incomingById.has(old.id)) merged.push({ ...old, evidenceIds: [...old.evidenceIds] });
   }
-  for (const [index, step] of incoming.entries()) {
+  for (const step of incoming) {
     const old = previous.find(item => item.id === step.id);
     const status = old?.status === 'completed' ? 'completed' : step.status;
     merged.push({
