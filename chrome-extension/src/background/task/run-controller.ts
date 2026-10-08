@@ -28,6 +28,10 @@ export class RunController {
   async start(run:TaskRun){
     if(this.activeRunId&&this.activeRunId!==run.id) throw new Error('Another task is already active');
     if(!this.factory) throw new Error('RunController executor factory is not configured');
+    if (run.activeTabId !== undefined) {
+      const tab = await chrome.tabs.get(run.activeTabId).catch(() => null);
+      if (!tab?.id || !tab.url) throw new Error('Task recovery target tab is no longer available');
+    }
     this.activeRunId=run.id;
     this.executor=await this.factory(run);
     this.executor.subscribeExecutionEvents(event=>this.onEvent(run,event));
