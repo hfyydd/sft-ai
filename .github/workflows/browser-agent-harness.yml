@@ -26,6 +26,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm turbo ready
       - run: pnpm --filter chrome-extension test
-      - run: pnpm type-check
+      - run: pnpm --filter chrome-extension type-check
+      - run: pnpm --filter @extension/sidepanel type-check
+      - run: pnpm --filter @extension/options type-check
+      - run: pnpm --filter @extension/storage type-check
       - run: pnpm exec turbo lint --continue
       - run: pnpm build
