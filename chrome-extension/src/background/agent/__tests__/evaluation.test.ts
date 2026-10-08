@@ -45,6 +45,7 @@ describe('browser task evaluation', () => {
       { id:'e1',runId:'run-1',sequence:1,type:'approval.requested',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash'} },
       { id:'e2',runId:'run-1',sequence:2,type:'approval.approved',timestamp:2,payload:{toolName:'click_element',parameterHash:'hash'} },
       { id:'e3',runId:'run-1',sequence:3,type:'tool.requested',timestamp:3,payload:{toolName:'click_element',parameterHash:'hash'} },
+      { id:'e4',runId:'run-1',sequence:4,type:'task.ok',timestamp:4,payload:{} },
     ];
     const outcome = evaluateTrace('run-1', [], events);
     expect(outcome.unapprovedHighImpactActions).toBe(0);
