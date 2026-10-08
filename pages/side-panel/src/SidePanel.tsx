@@ -43,11 +43,11 @@ const SidePanel = () => {
   // 响应后台的本地文件读取请求(file:// PDF 解析:SW 无法读 file://,由扩展页面代读)
   useEffect(() => {
     const listener = (
-      msg: { type?: string; path?: string },
+      msg: { type?: string; path?: string; requestId?: string },
       _sender: chrome.runtime.MessageSender,
       sendResponse: (resp: { ok: boolean; dataBase64?: string; error?: string }) => void,
     ) => {
-      if (msg?.type !== 'read_file_arraybuffer' || !msg.path) return false;
+      if (msg?.type !== 'read_file_arraybuffer' || !msg.path || !msg.path.startsWith('file://')) return false;
       try {
         const xhr = new XMLHttpRequest();
         xhr.open('GET', msg.path);
@@ -58,6 +58,10 @@ const SidePanel = () => {
             return;
           }
           const bytes = new Uint8Array(xhr.response);
+          if (bytes.byteLength > 10 * 1024 * 1024) {
+            sendResponse({ ok: false, error: '本地 PDF 超过 10MB 限制' });
+            return;
+          }
           let binary = '';
           const chunkSize = 0x8000;
           for (let i = 0; i < bytes.length; i += chunkSize) {
