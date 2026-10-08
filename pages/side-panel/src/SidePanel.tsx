@@ -811,7 +811,6 @@ const SidePanel = () => {
       portRef.current?.postMessage({
         type: 'cancel_task',
         taskId: runIdRef.current,
-      runId: runIdRef.current,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
