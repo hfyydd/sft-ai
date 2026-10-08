@@ -51,7 +51,6 @@ export class TaskRunStore {
       tx.onabort=()=>reject(tx.error??new Error('Task event transaction aborted'));
     });
     db.close();
-    await this.trimEventsBytes(runId);
     return event;
   }
 
