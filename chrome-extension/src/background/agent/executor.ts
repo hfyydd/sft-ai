@@ -28,6 +28,7 @@ import { analytics } from '../services/analytics';
 import type { ToolPolicy } from '../services/toolPolicy';
 import type { TaskCheckpoint, PlanStep } from '@extension/storage';
 import { classifyFailure, recoveryAdvice } from './recovery';
+import { advancePlan, mergePlan } from './plan';
 
 const logger = createLogger('Executor');
 
@@ -282,7 +283,7 @@ export class Executor {
         planOutput = await this.planner.execute();
       }
       if (planOutput.result) {
-        this.context.plan = planOutput.result.steps ?? this.context.plan;
+        this.context.plan = mergePlan(this.context.plan, planOutput.result.steps ?? []);
         this.context.messageManager.addPlan(JSON.stringify(planOutput.result), positionForPlan);
       }
       return planOutput;
@@ -328,12 +329,14 @@ export class Executor {
       // Agent Loop v2: 动作级失败写入工作记忆,供下一轮规划反思
       for (const r of context.actionResults) {
         if (r.error) {
-          const failureClass = classifyFailure(error);
+          if (context.plan.some(step => step.status === 'running')) context.plan = advancePlan(context.plan, false);
+      const failureClass = classifyFailure(error);
       context.taskMemory.add('失败分类:' + failureClass + '。恢复策略:' + recoveryAdvice(failureClass) + '。');
       context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
         }
       }
       if (navOutput.result?.done) {
+        this.context.plan = advancePlan(this.context.plan, true);
         return true;
       }
     } catch (error) {
