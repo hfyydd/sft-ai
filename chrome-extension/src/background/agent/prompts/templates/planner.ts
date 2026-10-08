@@ -75,6 +75,7 @@ When determining if a task is "done":
     "done": "[boolean type], whether the ultimate task is fully completed successfully",
     "challenges": "[string type], list any potential challenges or roadblocks",
     "next_steps": "[string type], list 2-3 high-level next steps to take (MUST be empty if done=true)",
+    "steps": "[array], structured subtask list; each item has id/title/successCriteria/status/evidenceIds",
     "final_answer": "[string type], complete user-friendly answer to the task (MUST be provided when done=true, empty otherwise)",
     "reasoning": "[string type], explain your reasoning for the suggested next steps or completion decision",
     "web_task": "[boolean type], whether the ultimate task is related to browsing the web",
