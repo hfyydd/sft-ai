@@ -80,6 +80,15 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
     return 'Unknown';
   }
 
+  public getRuntimeInfo() {
+    return {
+      modelName: this.modelName,
+      provider: this.provider,
+      library: this.chatModelLibrary,
+      structuredOutput: this.withStructuredOutput,
+    };
+  }
+
   // Set the tool calling method
   private setToolCallingMethod(toolCallingMethod?: string): string | null {
     if (toolCallingMethod === 'auto') {
