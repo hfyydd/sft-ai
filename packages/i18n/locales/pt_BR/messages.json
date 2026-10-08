@@ -999,5 +999,5 @@
   "options_general_taskRunRetentionDays": {"message":"Retenção das tarefas (dias)"},
   "options_general_taskRunRetentionDays_desc": {"message":"Registros de tarefas concluídas mais antigos serão removidos."},
   "options_general_taskRunMaxTerminalRuns": {"message":"Máximo de tarefas concluídas"},
-  "options_general_taskRunMaxTerminalRuns_desc": {"message":"Manter no máximo este número de tarefas concluídas no IndexedDB."},
+  "options_general_taskRunMaxTerminalRuns_desc": {"message":"Manter no máximo este número de tarefas concluídas no IndexedDB."}
 }
