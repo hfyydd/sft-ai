@@ -24,6 +24,7 @@ export interface PendingWrite {
   parameterHash: string;
   tabId?: number;
   url?: string;
+  expectedUrl?: string;
   startedAt: number;
   index?: number;
   expectedValueHash?: string;
