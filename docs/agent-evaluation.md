@@ -37,3 +37,11 @@
 7. Restart while an approval is pending.
 
 Build success is not browser acceptance; record these separately.
+
+
+## Repository implementation
+
+- Deterministic fixtures: `chrome-extension/src/background/agent/__tests__/fixtures/deterministic.ts`（30 项）
+- Trace evaluation: `chrome-extension/src/background/agent/evaluation.ts`
+- The evaluator counts evidence provenance coverage, unapproved high-impact actions, denied navigation follow-ups, recovery losses, tool-policy violations and unknown side effects.
+- Release thresholds are encoded in `DEFAULT_RELEASE_GATE_THRESHOLDS` and evaluated by `meetsReleaseGate`.
