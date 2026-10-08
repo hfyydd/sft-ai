@@ -8,8 +8,10 @@ export class RunController {
   private executor:Executor|null=null;
   private activeRunId:string|null=null;
   private factory:((run:TaskRun)=>Promise<Executor>)|null=null;
+  private subscribers = new Set<(event: AgentEvent) => Promise<void> | void>();
 
   configure(factory:(run:TaskRun)=>Promise<Executor>){this.factory=factory;}
+  subscribe(callback:(event:AgentEvent)=>Promise<void>|void){this.subscribers.add(callback);return()=>this.subscribers.delete(callback);}
 
   async initialize(){
     const active=await taskRunStore.listActiveRuns();
@@ -36,6 +38,7 @@ export class RunController {
 
   private async onEvent(run:TaskRun,event:AgentEvent){
     const persisted=await taskRunStore.appendEvent(run.id,event.state,{actor:event.actor,data:event.data,timestamp:event.timestamp});
+    for(const subscriber of this.subscribers) await subscriber(event);
     if(event.state==='task.pause') await taskRunStore.updateStatus(run.id,'paused');
     else if(event.state==='task.cancel') await taskRunStore.updateStatus(run.id,'cancelled');
     else if(event.state==='task.ok') await taskRunStore.updateStatus(run.id,'completed');
