@@ -107,7 +107,9 @@ export class AgentContext {
       const page = await this.browserContext.getCurrentPage();
       tabId = page.tabId;
       url = page.url();
-    } catch {}
+    } catch {
+      // Best-effort page metadata lookup; policy and execution continue without cached tab metadata.
+    }
 
     const argsObject = args && typeof args === 'object' ? args as Record<string, unknown> : {};
     const expectedUrl = typeof argsObject.url === 'string'
