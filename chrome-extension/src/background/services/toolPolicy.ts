@@ -10,6 +10,14 @@ export class ToolPolicy {
 export async function buildToolPolicy(skillIds:string[]=[]){
   const skills=await skillStore.getSkills();const selected=skills.filter(s=>s.enabled&&(s.mode==='always'||skillIds.includes(s.id)));
   const lists=selected.map(s=>s.allowedTools).filter((x):x is string[]=>x!=='*');
-  if(!lists.length)return new ToolPolicy();
-  return new ToolPolicy(lists.reduce((a,b)=>new Set([...a].filter(x=>b.includes(x)))));
+  return new ToolPolicy(intersectToolLists(selected.map(s => s.allowedTools)));
+}
+
+export function intersectToolLists(lists: Array<string[] | '*'>): Set<string> | null {
+  const explicit = lists.filter((list): list is string[] => list !== '*');
+  if (!explicit.length) return null;
+  return explicit.reduce(
+    (current, list) => new Set([...current].filter(name => list.includes(name))),
+    new Set(explicit[0]),
+  );
 }
