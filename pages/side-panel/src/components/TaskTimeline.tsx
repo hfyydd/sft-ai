@@ -1,4 +1,5 @@
 import React from 'react';
+import { t } from '@extension/i18n';
 
 export function TaskTimeline({
   events,
@@ -11,10 +12,10 @@ export function TaskTimeline({
 }) {
   return (
     <section className="rounded border p-2 text-xs">
-      <div className="mb-1 font-semibold">任务时间线</div>
+      <div className="mb-1 font-semibold">{t('task_timeline')}</div>
       {hasMore && onLoadMore && (
         <button type="button" className="mb-2 rounded border px-2 py-1" onClick={onLoadMore}>
-          加载更早事件
+          {t('task_load_earlier')}
         </button>
       )}
       {events.map(event => (
