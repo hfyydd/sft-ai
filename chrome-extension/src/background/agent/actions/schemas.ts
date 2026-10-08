@@ -238,3 +238,13 @@ export const waitActionSchema: ActionSchema = {
     seconds: z.number().int().default(3).describe('amount of seconds'),
   }),
 };
+
+
+export const askUserActionSchema: ActionSchema = {
+  name: 'ask_user',
+  description: 'Pause the task and ask the user for missing information or an explicit choice. Do not ask for secrets unless strictly necessary.',
+  schema: z.object({
+    intent: z.string().default('').describe('为什么需要用户介入,必须用简体中文书写'),
+    question: z.string().min(1).describe('需要用户回答的问题,必须用简体中文书写'),
+  }),
+};
