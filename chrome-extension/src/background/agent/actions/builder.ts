@@ -362,10 +362,23 @@ export class ActionBuilder {
       const page = await this.context.browserContext.getCurrentPage();
       const ordered = [...input.fields];
       const failures: string[] = [];
+      const evidence = await taskRunStore.getEvidence(this.context.taskId, 500).catch(() => []);
+      const knownEvidence = new Set(evidence.map(item => item.id));
       for (const field of ordered) {
+        const invalidEvidence = (field.evidenceIds ?? []).filter(id => !knownEvidence.has(id));
+        if (invalidEvidence.length) {
+          failures.push('字段 index=' + field.index + ' 引用了不存在的证据: ' + invalidEvidence.join(','));
+          continue;
+        }
         const state = await page.getState();
         const node = state?.selectorMap.get(field.index);
         if (!node) { failures.push('字段 index=' + field.index + ' 不存在'); continue; }
+        await taskRunStore.appendEvent(this.context.taskId, 'form.field_mapping', {
+          index: field.index,
+          label: field.label,
+          evidenceIds: field.evidenceIds,
+          valueLength: field.value.length,
+        }).catch(() => undefined);
         await page.inputTextElementNode(this.context.options.useVision, node, field.value);
         const refreshed = await page.getState();
         const refreshedNode = refreshed?.selectorMap.get(field.index);
