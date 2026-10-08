@@ -62,6 +62,28 @@ export class TaskRunStore {
     db.close();return out;
   }
 
+  async listAllRuns(): Promise<TaskRun[]> {
+    const db = await openTaskRunDatabase();
+    const out = await new Promise<TaskRun[]>((resolve, reject) => {
+      const values: TaskRun[] = [];
+      const q = db.transaction('runs').objectStore('runs').openCursor();
+      q.onsuccess = () => {
+        const cur = q.result;
+        if (!cur) { resolve(values); return; }
+        values.push(normalizeRun(cur.value)!);
+        cur.continue();
+      };
+      q.onerror = () => reject(q.error);
+    });
+    db.close();
+    return out;
+  }
+
+  async removeAllRuns(): Promise<void> {
+    const runs = await this.listAllRuns();
+    for (const run of runs) await this.removeRun(run.id);
+  }
+
   async cleanupRetention(maxTerminalRuns = 30, maxEventsPerRun = 2000, maxEvidencePerRun = 200) {
     const db=await openTaskRunDatabase();
     const terminal=new Set<TaskRunStatus>(['completed','failed','cancelled']);
