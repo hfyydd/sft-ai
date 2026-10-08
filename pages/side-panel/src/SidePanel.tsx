@@ -11,6 +11,7 @@ import ChatHistoryList from './components/ChatHistoryList';
 import { TaskPlanPanel } from './components/TaskPlanPanel';
 import { TaskTimeline } from './components/TaskTimeline';
 import { EvidenceList, type EvidenceItem } from './components/EvidenceList';
+import { ApprovalCard } from './components/ApprovalCard';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -1107,23 +1108,17 @@ const SidePanel = () => {
                   )}
                 </div>
                 {approvalAction && (
-                  <div className="shrink-0 border-t border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
-                    <div className="mb-2 font-semibold">需要你的确认</div>
-                    <div className="mb-2 break-words text-xs">
-                      {approvalAction.toolName} · {approvalAction.url || '当前页面'}
-                    </div>
-                    <div className="mb-3 max-h-24 overflow-auto text-xs">{approvalAction.argsSummary}</div>
-                    <div className="flex gap-2">
-                      <button type="button" className="rounded bg-zinc-900 px-3 py-1.5 text-white" onClick={() => {
-                        portRef.current?.postMessage({type:'approve_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
-                        setApprovalAction(null);
-                      }}>批准一次</button>
-                      <button type="button" className="rounded border px-3 py-1.5" onClick={() => {
-                        portRef.current?.postMessage({type:'reject_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
-                        setApprovalAction(null);
-                      }}>拒绝</button>
-                    </div>
-                  </div>
+                  <ApprovalCard
+                    action={approvalAction}
+                    onApprove={() => {
+                      portRef.current?.postMessage({type:'approve_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
+                      setApprovalAction(null);
+                    }}
+                    onReject={() => {
+                      portRef.current?.postMessage({type:'reject_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
+                      setApprovalAction(null);
+                    }}
+                  />
                 )}
                 {manualSkills.length > 0 && (
                   <div className="shrink-0 border-t px-3 py-2 text-xs">
