@@ -31,18 +31,27 @@ export function isUrlAllowed(url: string, allowList: string[], denyList: string[
     return false;
   }
 
-  // If firewall is disabled, allow all other URLs
+  // about:blank is only an explicitly supported recovery target.
+  if (trimmedUrl === 'about:blank') return true;
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(trimmedUrl);
+  } catch {
+    return false;
+  }
+
+  // A valid URL is required even when the firewall allow/deny lists are empty.
+  if (!['http:', 'https:', 'file:'].includes(parsedUrl.protocol)) {
+    return false;
+  }
+
+  // If firewall is disabled, allow valid URLs other than blocked schemes.
   if (allowList.length === 0 && denyList.length === 0) {
     return true;
   }
 
-  // Special case: Allow 'about:blank' explicitly
-  if (trimmedUrl === 'about:blank') {
-    return true;
-  }
-
   try {
-    const parsedUrl = new URL(trimmedUrl);
 
     // 1. Remove protocol prefix for further comparisons
     const urlWithoutProtocol = lowerCaseUrl.replace(/^https?:\/\//, '');
