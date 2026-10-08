@@ -525,13 +525,13 @@ export class ActionBuilder {
               chrome.runtime.sendMessage({type:'read_file_arraybuffer',path:tabUrl,requestId},result=>{clearTimeout(timer);if(chrome.runtime.lastError)reject(new Error(chrome.runtime.lastError.message));else resolve(result);});
             });
             if(!response?.ok||!response.dataBase64) throw new Error(response?.error||'本地 PDF 读取失败，请检查文件访问权限');
-            pdfResult=await extractPdfTextFromBytes(decodeBase64ToBytes(response.dataBase64),{cMapUrl:chrome.runtime.getURL('cmaps/')});
+            pdfResult=await extractPdfTextFromBytes(decodeBase64ToBytes(response.dataBase64),{cMapUrl:chrome.runtime.getURL('cmaps/'),maxPages:input.pageCount??20,maxChars:Math.min(input.maxLength??6000,30000),startPage:input.pageStart??1});
           } else {
-            pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/') });
+            pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxPages: input.pageCount ?? 20, maxChars: Math.min(input.maxLength ?? 6000, 30000), startPage: input.pageStart ?? 1 });
           }
           if (pdfResult.text) {
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
-            await this.persistEvidence('pdf', page.tabId, tabUrl, tabInfo.title || '', pdfResult.text);
+            await this.persistEvidence('pdf', page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
               extractedContent: formatPageEvidence(
