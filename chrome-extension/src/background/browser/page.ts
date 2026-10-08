@@ -1098,6 +1098,17 @@ export default class Page {
     return null;
   }
 
+  async verifyClickEffect(index: number, initialUrl: string): Promise<boolean> {
+    const currentUrl = this.url();
+    if (currentUrl !== initialUrl) return true;
+    try {
+      const state = await this.getState(false);
+      return !state.selectorMap.has(index);
+    } catch {
+      return false;
+    }
+  }
+
   async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
     const element = await this.locateElement(elementNode);
     if (!element) return false;
