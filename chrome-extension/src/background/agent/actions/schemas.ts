@@ -61,6 +61,8 @@ export const fillFormActionSchema: ActionSchema = {
     fields: z.array(z.object({
       index: z.number().int(),
       value: z.string(),
+      label: z.string().optional(),
+      evidenceIds: z.array(z.string()).default([]),
     })).min(1).max(50),
   }),
 };
