@@ -75,6 +75,7 @@ export interface TaskCheckpoint {
   plan: PlanStep[];
   completedStepIds: string[];
   pendingAction?: PendingAction;
+  approvedAction?: PendingAction;
   pendingWrite?: PendingWrite;
   pendingUserRequest?: PendingUserRequest;
   memory: MemoryFact[];
