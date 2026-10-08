@@ -404,6 +404,17 @@ const SidePanel = () => {
           setTimelineHasMore(snapshotEvents.length > 0 && snapshotEvents[0].sequence > 1);
           if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
           if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
+          const pendingFile = message.snapshot?.checkpoint?.pendingFileRead;
+          if (pendingFile) {
+            void readAuthorizedLocalFile(pendingFile.path, pendingFile.requestId)
+              .then(response => chrome.runtime.sendMessage(response))
+              .catch(error => chrome.runtime.sendMessage({
+                type: 'resolve_local_file_read',
+                runId: pendingFile.runId,
+                requestId: pendingFile.requestId,
+                error: error instanceof Error ? error.message : String(error),
+              }));
+          }
         } else if (message && message.type === 'run_event') {
           const event = message.event;
           if (event?.runId === sessionIdRef.current && event.sequence > lastRunSequenceRef.current) {
@@ -749,6 +760,7 @@ const SidePanel = () => {
           task: text,
           taskId: sessionIdRef.current,
           tabId,
+          skillIds: selectedSkillIds,
         });
         console.log('new_task sent', text, tabId, sessionIdRef.current);
       }
