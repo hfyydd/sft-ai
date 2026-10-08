@@ -103,8 +103,8 @@ export class Executor {
     };
   }
 
-  subscribeExecutionEvents(callback: EventCallback): void {
-    this.context.eventManager.subscribe(EventType.EXECUTION, callback);
+  subscribeExecutionEvents(callback: EventCallback): () => void {
+    return this.context.eventManager.subscribe(EventType.EXECUTION, callback);
   }
 
   clearExecutionEvents(): void {
