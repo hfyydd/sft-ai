@@ -515,12 +515,25 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
         if (pendingWriteCreated) {
           if (result.error) {
-            await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
-              toolName: actionName,
-              parameterHash: actionParameterHash,
-              error: result.error,
-            }).catch(() => undefined);
-            await this.context.pause();
+            if (result.sideEffectUnknown) {
+              await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+                toolName: actionName,
+                parameterHash: actionParameterHash,
+                error: result.error,
+              }).catch(() => undefined);
+              await this.context.pause();
+            } else {
+              const resolved = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_not_executed', {
+                toolName: actionName,
+                parameterHash: actionParameterHash,
+                reason: result.error,
+              }).catch(() => undefined);
+              this.context.pendingWrite = undefined;
+              const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+              if (checkpoint && resolved) {
+                await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: resolved.sequence, pendingWrite: undefined });
+              }
+            }
           } else {
             const completed = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_completed', {
               toolName: actionName,
@@ -539,10 +552,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           success: result.success !== false && !result.error,
           step: this.context.nSteps,
         }).catch(() => undefined);
-        if (PENDING_WRITE_TOOLS.has(actionName)) {
-          this.context.pendingWrite = undefined;
-        }
-
+ 
         // if the action has an index argument, record the interacted element to the result
         if (indexArg !== null) {
           const domElement = browserState.selectorMap.get(indexArg);
@@ -566,6 +576,14 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           throw error;
         }
         const errorMessage = error instanceof Error ? error.message : String(error);
+        if (PENDING_WRITE_TOOLS.has(actionName) && this.context.pendingWrite) {
+          await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+            toolName: actionName,
+            parameterHash: this.context.pendingWrite.parameterHash,
+            error: errorMessage,
+          }).catch(() => undefined);
+          await this.context.pause();
+        }
         logger.error(
           'doAction error',
           actionName,
@@ -583,6 +601,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             error: errorMessage,
             isDone: false,
             includeInMemory: true,
+            sideEffectUnknown: PENDING_WRITE_TOOLS.has(actionName),
           }),
         );
       }
