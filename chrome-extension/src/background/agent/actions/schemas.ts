@@ -121,7 +121,9 @@ export const readPageActionSchema: ActionSchema = {
     'Read the visible text content of the current page. Use this BEFORE answering any question about what the page contains',
   schema: z.object({
     intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
-    maxLength: z.number().int().default(6000).describe('maximum characters of text to return'),
+    maxLength: z.number().int().min(500).max(30000).default(6000).describe('maximum characters of text to return'),
+    pageStart: z.number().int().min(1).optional().describe('PDF first page to read, 1-based'),
+    pageCount: z.number().int().min(1).max(20).optional().describe('PDF pages to read in this call'),
   }),
 };
 
