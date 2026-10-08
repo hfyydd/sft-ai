@@ -314,29 +314,8 @@ export function createChatModel(providerConfig: ProviderConfig, modelConfig: Mod
       });
     }
     case ProviderTypeEnum.Llama: {
-      // Llama API has a different response format, use custom ChatLlama class
-      const args: {
-        model: string;
-        apiKey?: string;
-        configuration?: Record<string, unknown>;
-        topP?: number;
-        temperature?: number;
-        maxTokens?: number;
-      } = {
-        model: modelConfig.modelName,
-        apiKey: providerConfig.apiKey,
-        topP: (modelConfig.parameters?.topP ?? 0.1) as number,
-        temperature: (modelConfig.parameters?.temperature ?? 0.1) as number,
-        maxTokens,
-      };
-
-      const configuration: Record<string, unknown> = {};
-      if (providerConfig.baseUrl) {
-        configuration.baseURL = providerConfig.baseUrl;
-      }
-      args.configuration = configuration;
-
-      return new ChatLlama(args);
+      // Llama-compatible endpoints use the OpenAI-compatible chat protocol.
+      return createOpenAIChatModel(providerConfig, modelConfig, undefined);
     }
     default: {
       // by default, we think it's a openai-compatible provider
