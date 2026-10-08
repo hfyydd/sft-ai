@@ -109,6 +109,12 @@ export class RunController {
     const persisted = await taskRunStore.appendEvent(run.id, event.state, {
       actor: event.actor, data: event.data, timestamp: event.timestamp,
     });
+    const observedTabId = await this.executor?.getActiveTabId();
+    if (observedTabId !== undefined) {
+      await taskRunStore.updateStatus(run.id, event.state === 'task.cancel' ? 'cancelled' : (await taskRunStore.getRun(run.id))?.status ?? 'running', {
+        activeTabId: observedTabId,
+      }).catch(() => undefined);
+    }
     let nextStatus: TaskRunStatus | null = null;
     if (event.state === 'task.start') nextStatus = 'running';
     else if (event.state === 'task.pause') nextStatus = 'paused';
