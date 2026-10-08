@@ -28,6 +28,7 @@ export interface PendingWrite {
   startedAt: number;
   index?: number;
   expectedValueHash?: string;
+  beforeObservationSignature?: string;
 }
 
 export interface PendingAction {
