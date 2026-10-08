@@ -49,7 +49,9 @@ export class TaskRunStore {
       tx.onerror=()=>reject(tx.error??new Error('Task event append failed'));
       tx.onabort=()=>reject(tx.error??new Error('Task event transaction aborted'));
     });
-    db.close();return event;
+    db.close();
+    await this.trimEventsBytes(runId);
+    return event;
   }
 
   async saveCheckpoint(cp:TaskCheckpoint){
@@ -90,11 +92,16 @@ export class TaskRunStore {
   async listActiveRuns(){const db=await openTaskRunDatabase();const active=new Set<TaskRunStatus>(['queued','running','waiting_approval','waiting_user','paused','interrupted']);const out=await new Promise<TaskRun[]>((resolve,reject)=>{const a:TaskRun[]=[];const q=db.transaction('runs').objectStore('runs').openCursor();q.onsuccess=()=>{const c=q.result;if(!c){resolve(a);return;}if(active.has((c.value as TaskRun).status))a.push(normalizeRun(c.value)!);c.continue();};q.onerror=()=>reject(q.error);});db.close();return out;}
   async markInterrupted(){const runs=await this.listActiveRuns();return Promise.all(runs.filter(r=>r.status==='running').map(r=>this.updateStatus(r.id,'interrupted')));}
   async addEvidence(evidence: EvidenceRecord){
+    const bounded = {
+      ...evidence,
+      content: evidence.content.length > 50000 ? evidence.content.slice(0, 50000) + '\n…[证据已截断]' : evidence.content,
+    };
     const db=await openTaskRunDatabase();
-    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');tx.objectStore('evidence').put(evidence);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');tx.objectStore('evidence').put(bounded);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close();
-    await this.trimEventsBytes(runId);
+    await this.trimEvidenceBytes(evidence.runId);
   }
+
   private async trimEventsBytes(runId:string){
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('events','readwrite');const idx=tx.objectStore('events').index('runId');const rows:Array<{key:IDBValidKey;bytes:number}>=[];let total=0;
