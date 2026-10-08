@@ -610,10 +610,12 @@ export class ActionBuilder {
             await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
-              extractedContent: formatPageEvidence(
-                'pdf',
-                { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
-                `${okMsg}:\\n${pdfResult.text}`,
+              extractedContent: this.formatPdfEvidenceForModel(
+                page.tabId,
+                tabUrl,
+                tabInfo.title || '',
+                okMsg + ':\\n' + pdfResult.text,
+                pdfResult.startPage,
               ),
               includeInMemory: true,
             });
