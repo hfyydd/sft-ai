@@ -468,9 +468,70 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           step: this.context.nSteps,
         }).catch(() => undefined);
 
+        let pendingWriteCreated = false;
+        if (PENDING_WRITE_TOOLS.has(actionName)) {
+          const currentPage = await browserContext.getCurrentPage();
+          const expectedUrl =
+            actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs ? String(actionArgs.url) : undefined;
+          const expectedValue =
+            actionArgs && typeof actionArgs === 'object' && 'text' in actionArgs ? String(actionArgs.text) : undefined;
+          const pendingWrite = {
+            toolName: actionName,
+            parameterHash: actionParameterHash,
+            tabId:
+              actionName === 'close_tab' && actionArgs && typeof actionArgs === 'object' && 'tab_id' in actionArgs
+                ? Number(actionArgs.tab_id)
+                : currentPage.tabId,
+            url: currentPage.url(),
+            expectedUrl,
+            startedAt: Date.now(),
+            index: indexArg ?? undefined,
+            expectedValueHash: expectedValue ? await hashActionArgs(expectedValue) : undefined,
+          };
+          this.context.pendingWrite = pendingWrite;
+          const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+          const event = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_started', pendingWrite);
+          await taskRunStore.saveCheckpoint({
+            runId: this.context.taskId,
+            sequence: event.sequence,
+            plan: this.context.plan,
+            completedStepIds: this.context.plan.filter(step => step.status === 'completed').map(step => step.id),
+            memory: this.context.taskMemory.getFacts(),
+            evidenceIds: (await taskRunStore.getEvidence(this.context.taskId, 200)).map(item => item.id),
+            activeTabId: currentPage.tabId,
+            pendingWrite,
+            pendingAction: checkpoint?.pendingAction,
+            approvedAction: this.context.approvedAction,
+            pendingUserRequest: checkpoint?.pendingUserRequest,
+            pendingFileRead: checkpoint?.pendingFileRead,
+          });
+          pendingWriteCreated = true;
+        }
+
         const result = await actionInstance.call(actionArgs);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
+        }
+
+        if (pendingWriteCreated) {
+          if (result.error) {
+            await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+              toolName: actionName,
+              parameterHash: actionParameterHash,
+              error: result.error,
+            }).catch(() => undefined);
+            await this.context.pause();
+          } else {
+            const completed = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_completed', {
+              toolName: actionName,
+              parameterHash: actionParameterHash,
+            });
+            this.context.pendingWrite = undefined;
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+            if (checkpoint) {
+              await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: completed.sequence, pendingWrite: undefined });
+            }
+          }
         }
         await taskRunStore.appendEvent(this.context.taskId, 'tool.completed', {
           toolName: actionName,
