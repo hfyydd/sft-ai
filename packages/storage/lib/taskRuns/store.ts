@@ -26,36 +26,20 @@ export class TaskRunStore {
       const tx=db.transaction(['runs','events'],'readwrite');
       const runs=tx.objectStore('runs');
       const events=tx.objectStore('events');
+      let created:TaskRunEvent|undefined;
       const req=runs.get(runId);
       req.onsuccess=()=>{
         const run=normalizeRun(req.result as TaskRun|undefined);
-        if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
-        const sequence=(run.lastEventSequence??0)+1;
-        const e:TaskRunEvent={id:makeId(),runId,sequence,type,timestamp:Date.now(),payload};
-        events.add(e);
-        runs.put({...run,lastEventSequence:sequence,updatedAt:Date.now()});
-      };
-      tx.oncomplete=()=>{
-        const sequence=JSON.parse(JSON.stringify({})); void sequence;
-        // Re-read is deliberately avoided in this transaction; the object is retained below.
-      };
-      const previousComplete=tx.oncomplete;
-      tx.oncomplete=()=>{
-        // Find the newly committed tail deterministically by sequence recorded above.
-        void previousComplete;
-      };
-      req.onerror=()=>reject(req.error);
-      tx.onerror=()=>reject(tx.error??new Error('Task event append failed'));
-      let created:TaskRunEvent|undefined;
-      req.onsuccess=()=>{
-        const run=normalizeRun(req.result as TaskRun|undefined);
-        if(!run)return;
+        if(!run){tx.abort();return;}
         const sequence=(run.lastEventSequence??0)+1;
         created={id:makeId(),runId,sequence,type,timestamp:Date.now(),payload};
         events.add(created);
         runs.put({...run,lastEventSequence:sequence,updatedAt:Date.now()});
       };
+      req.onerror=()=>reject(req.error??new Error('Task run read failed'));
       tx.oncomplete=()=>created?resolve(created):reject(new Error('Task event was not created'));
+      tx.onerror=()=>reject(tx.error??new Error('Task event append failed'));
+      tx.onabort=()=>reject(tx.error??new Error('Task event transaction aborted'));
     });
     db.close();return event;
   }
