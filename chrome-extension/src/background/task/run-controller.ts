@@ -170,7 +170,21 @@ export class RunController {
     }
 
     if (run.status === 'interrupted' && !this.executor) {
-      await this.recover(run.id);
+      if (!this.factory) throw new Error('RunController executor factory is not configured');
+      if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
+      const checkpoint = await taskRunStore.getCheckpoint(run.id);
+      if (checkpoint?.pendingAction || checkpoint?.pendingUserRequest) {
+        throw new Error('该任务仍在等待审批或用户输入，不能直接追加 Follow-up');
+      }
+      if (checkpoint?.pendingWrite) {
+        const verified = this.verifier ? await this.verifier(run, checkpoint.pendingWrite) : false;
+        if (!verified) throw new Error('任务存在未确认的浏览器写操作，请先恢复并核验');
+        const event = await taskRunStore.appendEvent(run.id, 'runtime.recovery_verified', { toolName: checkpoint.pendingWrite.toolName });
+        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined });
+      }
+      this.activeRunId = run.id;
+      this.executor = await this.factory(run);
+      await this.hydrateExecutor(run);
     }
 
     if (!this.executor) {
