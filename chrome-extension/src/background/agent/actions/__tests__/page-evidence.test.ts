@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UNTRUSTED_CONTENT_TAG_END, UNTRUSTED_CONTENT_TAG_START } from '../../messages/utils';
-import { formatPageEvidence } from '../pageEvidence';
+import { formatPageEvidence } from '../../messages/pageEvidence';
 
 const metadata = {
   tabId: 7,
