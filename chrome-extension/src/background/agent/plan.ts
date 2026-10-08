@@ -19,3 +19,25 @@ export function validatePlanSteps(steps: PlanStep[]): void {
     ids.add(step.id);
   }
 }
+
+export function advancePlan(steps: PlanStep[], succeeded: boolean): PlanStep[] {
+  const next = steps.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] }));
+  const currentIndex = next.findIndex(step => step.status === 'running');
+  const index = currentIndex >= 0 ? currentIndex : next.findIndex(step => step.status === 'queued');
+  if (index < 0) return next;
+  next[index].status = succeeded ? 'completed' : 'blocked';
+  if (succeeded) {
+    const following = next.find(step => step.status === 'queued');
+    if (following) following.status = 'running';
+  }
+  return next;
+}
+
+export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[] {
+  const previousById = new Map(previous.map(step => [step.id, step]));
+  return incoming.map(step => {
+    const old = previousById.get(step.id);
+    const status = old?.status === 'completed' ? 'completed' : step.status;
+    return { ...step, status, evidenceIds: [...new Set([...(old?.evidenceIds ?? []), ...step.evidenceIds])] };
+  });
+}
