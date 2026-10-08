@@ -108,6 +108,55 @@ export class RunController {
     for (const subscriber of this.subscribers) await subscriber(event);
   }
 
+  async continueWithFollowUp(runId: string, task: string) {
+    const run = await taskRunStore.getRun(runId);
+    if (!run) throw new Error('Unknown task run');
+    if (this.activeRunId && this.activeRunId !== runId) throw new Error('Another task is already active');
+
+    if (!this.executor) {
+      if (!this.factory) throw new Error('RunController executor factory is not configured');
+      if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
+      this.activeRunId = run.id;
+      this.executor = await this.factory(run);
+      await this.hydrateExecutor(run);
+    }
+
+    this.executor.addFollowUpTask(task);
+    await taskRunStore.appendEvent(run.id, 'task.follow_up', { task });
+    await taskRunStore.updateStatus(run.id, 'running');
+    this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    void this.executeDetached(run);
+  }
+
+  async startReplay(runId: string, historySessionId: string, task: string, tabId: number) {
+    if (this.activeRunId) throw new Error('Another task is already active');
+    const run = await taskRunStore.createRun({ id: runId, sessionId: runId, goal: task, activeTabId: tabId });
+    if (!this.factory) throw new Error('RunController executor factory is not configured');
+    await this.assertRecoverableTab(tabId);
+    this.activeRunId = run.id;
+    this.executor = await this.factory(run);
+    this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    await taskRunStore.updateStatus(run.id, 'running');
+    try {
+      void this.executeReplayDetached(run, historySessionId);
+    } catch {
+      await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+      throw new Error('Failed to start replay');
+    }
+  }
+
+  private async executeReplayDetached(run: TaskRun, historySessionId: string) {
+    try {
+      await this.executor?.replayHistory(historySessionId);
+    } catch (error) {
+      await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+      await taskRunStore.appendEvent(run.id, 'runtime.replay_exception', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
+    } finally {
+      if (this.executor) await this.executor.cleanup();
+      await this.clearIfTerminal();
+    }
+  }
+
   async pause() {
     if (!this.executor || !this.activeRunId) throw new Error('No active task');
     await this.executor.pause();
