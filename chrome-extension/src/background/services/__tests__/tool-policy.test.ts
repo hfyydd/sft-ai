@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ToolPolicy, intersectToolLists } from '../toolPolicy';
+import { ToolPolicy } from '../toolPolicy';
 
 describe('ToolPolicy', () => {
   it('allows tools without an active whitelist', () => {
