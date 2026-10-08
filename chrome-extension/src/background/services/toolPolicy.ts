@@ -5,7 +5,7 @@ export interface ToolPolicyDecision {
   reason: string;
 }
 
-const MANDATORY_TOOLS = new Set(['done', 'ask_user']);
+const MANDATORY_TOOLS = new Set(['done', 'ask_user', 'read_evidence']);
 const HIGH_IMPACT = new Set([
   'click_element',
   'close_tab',
