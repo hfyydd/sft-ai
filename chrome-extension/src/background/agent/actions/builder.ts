@@ -692,7 +692,10 @@ export class ActionBuilder {
             pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxPages: input.pageCount ?? 20, maxChars: Math.min(input.maxLength ?? 6000, 30000), startPage: input.pageStart ?? 1 });
           }
           if (pdfResult.text) {
-            const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
+            const cursorMsg = pdfResult.nextPageStart
+              ? `，如需继续读取请将 pageStart=${pdfResult.nextPageStart} 作为下一次 read_page 的起始页`
+              : '';
+            const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})${cursorMsg}`;
             await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
