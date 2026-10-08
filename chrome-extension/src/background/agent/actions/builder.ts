@@ -214,6 +214,19 @@ export class ActionBuilder {
       const intent = input.intent || t('act_goToUrl_start', [input.url]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
+      const currentPage = await this.context.browserContext.getCurrentPage();
+      const currentUrl = currentPage.url();
+      const crossDomain = (() => {
+        try { return new URL(currentUrl).hostname !== new URL(input.url).hostname; } catch { return true; }
+      })();
+      if (crossDomain) {
+        const approved = await requestApproval({
+          runId: this.context.taskId, toolName: 'go_to_url', args: input,
+          tabId: currentPage.tabId, url: currentUrl, reason: '跨域导航需要确认',
+        });
+        if (!approved) return new ActionResult({ error: 'Cross-domain navigation was not approved', includeInMemory: true });
+      }
+
       await this.context.browserContext.navigateTo(input.url);
       const msg2 = t('act_goToUrl_ok', [input.url]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg2);
@@ -364,6 +377,12 @@ export class ActionBuilder {
     const openTab = new Action(async (input: z.infer<typeof openTabActionSchema.schema>) => {
       const intent = input.intent || t('act_openTab_start', [input.url]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+      const currentPage = await this.context.browserContext.getCurrentPage();
+      const approved = await requestApproval({
+        runId: this.context.taskId, toolName: 'open_tab', args: input,
+        tabId: currentPage.tabId, url: currentPage.url(), reason: '打开新标签页',
+      });
+      if (!approved) return new ActionResult({ error: 'Opening a new tab was not approved', includeInMemory: true });
       await this.context.browserContext.openTab(input.url);
       const msg = t('act_openTab_ok', [input.url]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
