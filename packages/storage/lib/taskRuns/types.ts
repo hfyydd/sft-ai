@@ -53,6 +53,7 @@ export interface TaskRun {
   checkpointVersion: number;
   lastEventSequence: number;
   skillIds: string[];
+  parentRunId?: string;
 }
 
 export interface TaskRunEvent {
