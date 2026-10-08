@@ -174,7 +174,7 @@ export class ActionBuilder {
     text: string,
     startPage: number,
   ) {
-    const re = /--- 第 (\\d+) 页 ---\\n([\\s\\S]*?)(?=\\n--- 第 \\d+ 页 ---\\n|$)/g;
+    const re = /--- 第 (\d+) 页 ---\n([\s\S]*?)(?=\n--- 第 \d+ 页 ---\n|$)/g;
     const chunks: string[] = [];
     let match: RegExpExecArray | null;
     while ((match = re.exec(text))) {
@@ -220,7 +220,7 @@ export class ActionBuilder {
         id: evidenceId,
         runId: this.context.taskId,
         source, tabId, url, title, capturedAt: Date.now(), pageNumber,
-        content: content.length > 50000 ? content.slice(0,50000) + '\\n…[证据已截断]' : content,
+        content: content.length > 50000 ? content.slice(0,50000) + '\n…[证据已截断]' : content,
       });
       const running = this.context.plan.find(step => step.status === 'running');
       if (running) running.evidenceIds = [...new Set([...running.evidenceIds, evidenceId])];
@@ -614,7 +614,7 @@ export class ActionBuilder {
                 page.tabId,
                 tabUrl,
                 tabInfo.title || '',
-                okMsg + ':\\n' + pdfResult.text,
+                okMsg + ':\n' + pdfResult.text,
                 pdfResult.startPage,
               ),
               includeInMemory: true,
@@ -683,7 +683,7 @@ export class ActionBuilder {
           extractedContent: formatPageEvidence(
             'vision',
             { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
-            `${okMsg}:\\n${text}`,
+            `${okMsg}:\n${text}`,
           ),
           includeInMemory: true,
         });
