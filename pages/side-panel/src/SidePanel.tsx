@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { FiArrowLeft, FiSettings } from 'react-icons/fi';
 import { PiPlusBold } from 'react-icons/pi';
 import { GrHistory } from 'react-icons/gr';
-import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore } from '@extension/storage';
+import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore, skillStore, type Skill } from '@extension/storage';
 import { t } from '@extension/i18n';
 import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
@@ -35,6 +35,8 @@ const SidePanel = () => {
   const [isReplaying, setIsReplaying] = useState(false);
   const [approvalAction, setApprovalAction] = useState<any | null>(null);
   const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
+  const [manualSkills, setManualSkills] = useState<Skill[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
   const isReplayingRef = useRef<boolean>(false);
@@ -672,6 +674,7 @@ const SidePanel = () => {
           task: text,
           taskId: sessionIdRef.current,
           tabId,
+          skillIds: selectedSkillIds,
         });
         console.log('follow_up_task sent', text, tabId, sessionIdRef.current);
       } else {
@@ -1111,6 +1114,22 @@ const SidePanel = () => {
                         portRef.current?.postMessage({type:'reject_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
                         setApprovalAction(null);
                       }}>拒绝</button>
+                    </div>
+                  </div>
+                )}
+                {manualSkills.length > 0 && (
+                  <div className="shrink-0 border-t px-3 py-2 text-xs">
+                    <div className="mb-1 text-zinc-500">本次任务 Skill</div>
+                    <div className="flex flex-wrap gap-2">
+                      {manualSkills.map(skill => (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          className={`rounded-full border px-2 py-1 ${selectedSkillIds.includes(skill.id) ? 'bg-zinc-900 text-white' : ''}`}
+                          onClick={() => setSelectedSkillIds(prev => prev.includes(skill.id) ? prev.filter(id => id !== skill.id) : [...prev, skill.id])}>
+                          {skill.name}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
