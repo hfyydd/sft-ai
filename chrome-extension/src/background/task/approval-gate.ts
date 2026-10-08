@@ -12,6 +12,27 @@ interface ApprovalRequest {
 
 const pending = new Map<string, (approved: boolean) => void>();
 
+function redactForAudit(value: unknown): unknown {
+  const sensitive = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|set-cookie|cvv|card[_-]?number|security[_-]?code)/i;
+  if (Array.isArray(value)) return value.slice(0, 20).map(item => redactForAudit(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).slice(0, 30).map(([key, item]) => [
+        key,
+        sensitive.test(key) ? '[REDACTED]' : redactForAudit(item),
+      ]),
+    );
+  }
+  if (typeof value === 'string') return value.length > 300 ? value.slice(0, 300) + '…' : value;
+  return value;
+}
+
+function makeAuditSummary(value: unknown): string {
+  const redacted = redactForAudit(value);
+  const serialized = JSON.stringify(redacted);
+  return serialized.length > 2000 ? serialized.slice(0, 2000) + '…' : serialized;
+}
+
 async function hash(value: string) {
   const data = new TextEncoder().encode(value);
   const digest = await crypto.subtle.digest('SHA-256', data);
@@ -65,7 +86,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
   const action: PendingAction = {
     runId: input.runId,
     toolName: input.toolName,
-    argsSummary: JSON.stringify(input.args),
+    argsSummary: makeAuditSummary(input.args),
     tabId: input.tabId,
     url: input.url,
     targetUrl: input.targetUrl,
