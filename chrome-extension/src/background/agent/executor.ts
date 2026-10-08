@@ -95,6 +95,15 @@ export class Executor {
     this.context.messageManager.initTaskMessages(this.navigatorPrompt.getSystemMessage(), task);
   }
 
+  getRuntimeSnapshot() {
+    return {
+      memory: this.context.taskMemory.getFacts(),
+      activeTabId: this.context.browserContext.getConfig() ? undefined : undefined,
+      step: this.context.nSteps,
+      finalAnswer: this.context.finalAnswer,
+    };
+  }
+
   subscribeExecutionEvents(callback: EventCallback): void {
     this.context.eventManager.subscribe(EventType.EXECUTION, callback);
   }
