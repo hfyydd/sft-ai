@@ -1,4 +1,4 @@
-import type { TaskCheckpoint, TaskRun, TaskRunEvent } from './types';
+import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent } from './types';
 
 const DB_NAME = 'sft-ai-task-runs';
 const DB_VERSION = 2;
@@ -7,6 +7,7 @@ export interface TaskRunDatabase {
   runs: TaskRun;
   events: TaskRunEvent;
   checkpoints: TaskCheckpoint;
+  evidence: EvidenceRecord;
 }
 
 export function openTaskRunDatabase(): Promise<IDBDatabase> {
