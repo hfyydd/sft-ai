@@ -24,6 +24,7 @@ import { buildToolPolicy } from './services/toolPolicy';
 import { taskRunStore } from '@extension/storage';
 import { runController } from './task/run-controller';
 import { resolveApproval } from './task/approval-gate';
+import { resolveLocalPdfBytes } from './task/local-file-gate';
 import { resolveUserRequest } from './task/user-gate';
 
 const logger = createLogger('background');
@@ -119,6 +120,13 @@ analyticsSettingsStore.subscribe(() => {
 
 // Listen for simple messages (e.g., from options page)
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === 'resolve_local_file_read' && msg.runId && msg.requestId && msg.dataBase64) {
+    resolveLocalPdfBytes({ runId: msg.runId, requestId: msg.requestId, dataBase64: msg.dataBase64 })
+      .then(ok => sendResponse({ ok }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   if (msg?.type === 'debug_pdf_extract' && msg.url) {
     extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
       .then(r =>
