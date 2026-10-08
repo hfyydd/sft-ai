@@ -31,6 +31,7 @@ globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
 }) as typeof globalThis.fetch;
 
 const logger = createLogger('PdfExtract');
+export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 export interface PdfExtractResult {
   text: string;
@@ -139,7 +140,10 @@ export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOpt
   if (!res.ok) {
     throw new Error(`下载 PDF 失败:HTTP ${res.status}`);
   }
+  const contentLength = Number(res.headers.get('content-length') || 0);
+  if (contentLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
   const data = new Uint8Array(await res.arrayBuffer());
+  if (data.byteLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
   return extractPdfData(data, options);
 }
 
@@ -151,7 +155,7 @@ export function decodeBase64ToBytes(base64:string):Uint8Array {
 }
 
 export async function extractPdfTextFromBytes(data:Uint8Array,options?:PdfExtractOptions){
-  const maxBytes=10*1024*1024;
+  const maxBytes=MAX_PDF_BYTES;
   if(data.byteLength>maxBytes) throw new Error(`PDF 文件超过 ${maxBytes} 字节限制`);
   return extractPdfData(data,options);
 }
