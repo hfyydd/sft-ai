@@ -506,6 +506,11 @@ const SidePanel = () => {
     [stopConnection],
   );
 
+  useEffect(() => {
+    setupConnection();
+    return () => stopConnection();
+  }, [setupConnection, stopConnection]);
+
   // Handle replay command
   const handleReplay = async (historySessionId: string): Promise<void> => {
     try {
