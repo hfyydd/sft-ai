@@ -80,7 +80,9 @@ runController.configure(
       return !tab;
     }
     if (pendingWrite.toolName === 'go_to_url' || pendingWrite.toolName === 'open_tab') {
-      return page.url() !== (pendingWrite.url || '');
+      if (pendingWrite.toolName === 'go_to_url') return pendingWrite.expectedUrl ? page.url() === pendingWrite.expectedUrl : page.url() !== (pendingWrite.url || '');
+      if (pendingWrite.toolName === 'open_tab') return page.url() !== (pendingWrite.url || '');
+      return false;
     }
     if (pendingWrite.toolName === 'click_element' && pendingWrite.index !== undefined) {
       return page.verifyClickEffect(pendingWrite.index, pendingWrite.url || '');
