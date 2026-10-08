@@ -58,6 +58,7 @@ export class AgentContext {
   plan: PlanStep[];
   startedAt: number;
   pendingWrite?: PendingWrite;
+  approvedAction?: PendingAction;
 
   constructor(
     taskId: string,
