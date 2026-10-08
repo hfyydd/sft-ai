@@ -24,6 +24,7 @@ import {
   nextPageActionSchema,
   scrollToTopActionSchema,
   scrollToBottomActionSchema,
+  fillFormActionSchema,
 } from './schemas';
 import { z } from 'zod';
 import { createLogger } from '@src/background/log';
@@ -263,6 +264,32 @@ export class ActionBuilder {
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, waitActionSchema);
     actions.push(wait);
+
+    const fillForm = new Action(async (input: z.infer<typeof fillFormActionSchema.schema>) => {
+      const intent = input.intent || '填写表单草稿并逐字段回读校验';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+      const page = await this.context.browserContext.getCurrentPage();
+      const state = await page.getState();
+      const ordered = [...input.fields];
+      const failures: string[] = [];
+      for (const field of ordered) {
+        const node = state?.selectorMap.get(field.index);
+        if (!node) { failures.push('字段 index=' + field.index + ' 不存在'); continue; }
+        await page.inputTextElementNode(this.context.options.useVision, node, field.value);
+        if (!(await page.verifyInputValue(node, field.value))) {
+          failures.push('字段 index=' + field.index + ' 回读不一致');
+        }
+      }
+      if (failures.length) {
+        const msg = '表单草稿校验失败：' + failures.join('；');
+        this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
+        return new ActionResult({ error: msg, includeInMemory: true });
+      }
+      const msg = '表单草稿已填写并完成回读校验，尚未提交';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
+      return new ActionResult({ extractedContent: msg, success: true, includeInMemory: true });
+    }, fillFormActionSchema);
+    actions.push(fillForm);
 
     // Element Interaction Actions
     const clickElement = new Action(
