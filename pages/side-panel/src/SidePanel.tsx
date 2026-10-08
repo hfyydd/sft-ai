@@ -423,6 +423,18 @@ const SidePanel = () => {
             if (message.sequence > lastRunSequenceRef.current) {
               lastRunSequenceRef.current = message.sequence;
               const runtimeEvent = { ...message };
+              setRunSnapshot((prev: any) => {
+                if (!prev?.run) return prev;
+                const state = message.state;
+                const status =
+                  state === ExecutionState.TASK_OK ? 'completed' :
+                  state === ExecutionState.TASK_FAIL ? 'failed' :
+                  state === ExecutionState.TASK_CANCEL ? 'cancelled' :
+                  state === ExecutionState.TASK_PAUSE ? 'paused' :
+                  state === ExecutionState.TASK_RESUME || state === ExecutionState.TASK_START ? 'running' :
+                  prev.run.status;
+                return { ...prev, run: { ...prev.run, status } };
+              });
               setRunSnapshot((prev: any) =>
                 prev ? { ...prev, events: [...(prev.events || []).filter((e: any) => e.sequence !== message.sequence), runtimeEvent].sort((a: any,b: any) => a.sequence-b.sequence).slice(-500) } : prev,
               );
@@ -1118,6 +1130,21 @@ const SidePanel = () => {
               {showHistory ? t('chat_history_title') : 'SFT AI 助手'}
             </span>
           </div>
+          {!showHistory && runSnapshot?.run && (
+            <div className="mr-2 flex items-center gap-1 text-[11px] text-zinc-500">
+              <span>{runSnapshot.run.status}</span>
+              {['running', 'waiting_user', 'waiting_approval'].includes(runSnapshot.run.status) && (
+                <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'pause_task', taskId: runSnapshot.run.id })}>
+                  {t('task_pause')}
+                </button>
+              )}
+              {runSnapshot.run.status === 'paused' && (
+                <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'resume_task', taskId: runSnapshot.run.id })}>
+                  {t('task_resume')}
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-1">
             {!showHistory && (
               <>
