@@ -248,6 +248,9 @@ export const SkillsSettings: React.FC<SkillsSettingsProps> = ({ isDarkMode }) =>
                         }`}>
                         {skill.mode === 'always' ? '常驻' : '手动'}
                       </span>
+                      <span className="rounded bg-slate-500/10 px-2 py-0.5 text-xs text-slate-500">
+                        v{skill.version ?? 1}
+                      </span>
                       {!skill.enabled && (
                         <span
                           className={`rounded px-2 py-0.5 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
