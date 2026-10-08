@@ -25,6 +25,7 @@ import {
   scrollToTopActionSchema,
   scrollToBottomActionSchema,
   fillFormActionSchema,
+  askUserActionSchema,
 } from './schemas';
 import { z } from 'zod';
 import { createLogger } from '@src/background/log';
@@ -36,6 +37,7 @@ import { decodeBase64ToBytes, extractPdfTextFromBytes, extractPdfTextFromUrl } f
 import { requestApproval } from '../../task/approval-gate';
 import { requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 import { taskRunStore } from '@extension/storage';
+import { askUser } from '../../task/user-gate';
 
 const logger = createLogger('Action');
 
@@ -275,6 +277,17 @@ export class ActionBuilder {
       return new ActionResult({ extractedContent: msg, includeInMemory: true });
     }, waitActionSchema);
     actions.push(wait);
+
+    const askUserAction = new Action(async (input: z.infer<typeof askUserActionSchema.schema>) => {
+      const intent = input.intent || '需要用户补充信息';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
+      const answer = await askUser({ runId: this.context.taskId, question: input.question, reason: intent });
+      if (answer === null) return new ActionResult({ error: '等待用户介入超时', includeInMemory: true });
+      const msg = '用户补充信息已收到';
+      this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
+      return new ActionResult({ extractedContent: wrapUntrustedContent('用户回答：' + answer), success: true, includeInMemory: true });
+    }, askUserActionSchema);
+    actions.push(askUserAction);
 
     const fillForm = new Action(async (input: z.infer<typeof fillFormActionSchema.schema>) => {
       const intent = input.intent || '填写表单草稿并逐字段回读校验';
