@@ -66,6 +66,7 @@ export class RunController {
       await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
       await taskRunStore.appendEvent(run.id, 'runtime.exception', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
     } finally {
+      if (this.executor) await this.executor.cleanup();
       await this.clearIfTerminal();
     }
   }
