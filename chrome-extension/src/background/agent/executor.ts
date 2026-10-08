@@ -110,6 +110,15 @@ export class Executor {
   }
 
   getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
+  async getActiveTabId(): Promise<number | undefined> {
+    try {
+      return (await this.context.browserContext.getCurrentPage()).tabId;
+    } catch {
+      return undefined;
+    }
+  }
+
+
 
   getRuntimeSnapshot() {
     const navigatorInfo = this.navigator.getRuntimeInfo();
