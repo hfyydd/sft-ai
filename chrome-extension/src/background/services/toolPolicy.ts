@@ -1,7 +1,7 @@
 import { skillStore } from '@extension/storage';
 
 export interface ToolPolicyDecision { allowed:boolean; reason:string; }
-const HIGH_IMPACT=new Set(['click_element','close_tab','input_text','select_dropdown_option','send_keys','go_to_url','open_tab']);
+const HIGH_IMPACT=new Set(['click_element','close_tab','input_text','select_dropdown_option','send_keys','go_to_url','open_tab','fill_form']);
 export class ToolPolicy {
   constructor(private readonly allowed:Set<string>|null=null){}
   decide(name:string):ToolPolicyDecision{if(!this.allowed)return{allowed:true,reason:'default'};return this.allowed.has(name)?{allowed:true,reason:'skill_allowed'}:{allowed:false,reason:'skill_tool_not_allowed'};}
