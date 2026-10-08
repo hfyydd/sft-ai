@@ -5,8 +5,8 @@ const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.on
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 export class TaskRunStore {
-  async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number}):Promise<TaskRun>{
-    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0};
+  async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number;skillIds?:string[]}):Promise<TaskRun>{
+    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0,skillIds:input.skillIds??[]};
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').add(run);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close(); return run;
