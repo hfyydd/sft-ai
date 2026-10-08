@@ -240,6 +240,10 @@ export class Executor {
         const maxStepsError = new MaxStepsReachedError(t('exec_errors_maxStepsReached'));
         const errorCategory = analytics.categorizeError(maxStepsError);
         void analytics.trackTaskFailed(this.context.taskId, errorCategory);
+      } else if (this.context.consecutiveFailures >= this.context.options.maxFailures) {
+        const error = new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
+        this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_FAIL, error.message);
+        void analytics.trackTaskFailed(this.context.taskId, analytics.categorizeError(error));
       } else if (this.context.stopped) {
         this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_CANCEL, t('exec_task_cancel'));
 
