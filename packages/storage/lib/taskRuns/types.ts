@@ -51,12 +51,21 @@ export interface TaskRunEvent {
   payload: unknown;
 }
 
+export interface PendingUserRequest {
+  runId: string;
+  question: string;
+  reason?: string;
+  nonce: string;
+  expiresAt: number;
+}
+
 export interface TaskCheckpoint {
   runId: string;
   sequence: number;
   plan: PlanStep[];
   completedStepIds: string[];
   pendingAction?: PendingAction;
+  pendingUserRequest?: PendingUserRequest;
   memory: MemoryFact[];
   evidenceIds: string[];
   activeTabId?: number;
