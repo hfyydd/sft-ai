@@ -201,7 +201,7 @@ export abstract class BaseAgent<T extends z.ZodType, M = unknown> {
             return parsed;
           }
         }
-        const salvagedFromToolCalls2 = this.salvageFromToolCalls(response.raw);
+        const salvagedFromToolCalls2 = this.salvageFromToolCalls(response?.raw);
         if (salvagedFromToolCalls2) {
           logger.info(`[${this.modelName}] Structured output failed, tool_calls salvage succeeded`);
           return salvagedFromToolCalls2;
