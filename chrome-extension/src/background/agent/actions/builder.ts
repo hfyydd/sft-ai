@@ -1,3 +1,4 @@
+import { formatPageEvidence } from '../messages/pageEvidence';
 import { ActionResult, type AgentContext } from '@src/background/agent/types';
 import { t } from '@extension/i18n';
 import {
@@ -406,7 +407,11 @@ export class ActionBuilder {
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
-              extractedContent: okMsg + ':\n' + pdfResult.text,
+              extractedContent: formatPageEvidence(
+                'pdf',
+                { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
+                `${okMsg}:\\n${pdfResult.text}`,
+              ),
               includeInMemory: true,
             });
           }
@@ -469,11 +474,22 @@ export class ActionBuilder {
         const okMsg = t('act_readPage_vision_ok');
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
         return new ActionResult({
-          extractedContent: okMsg + ':\n' + text,
+          extractedContent: formatPageEvidence(
+            'vision',
+            { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
+            `${okMsg}:\\n${text}`,
+          ),
           includeInMemory: true,
         });
       }
-      return new ActionResult({ extractedContent: text, includeInMemory: true });
+      return new ActionResult({
+        extractedContent: formatPageEvidence(
+          'dom',
+          { tabId: page.tabId, url: tabUrl, title: tabInfo.title || '', capturedAt: new Date().toISOString() },
+          text,
+        ),
+        includeInMemory: true,
+      });
     }, readPageActionSchema);
     actions.push(readPage);
 
