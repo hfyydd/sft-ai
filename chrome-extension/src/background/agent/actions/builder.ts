@@ -618,12 +618,13 @@ export class ActionBuilder {
               runId: this.context.taskId,
               tabId: page.tabId,
               path: tabUrl,
+              timeoutMs: 60_000,
             });
-            pdfResult = await extractPdfTextFromBytes(bytes, {
-              cMapUrl: chrome.runtime.getURL('cmaps/'),
-              maxPages: input.pageCount ?? 20,
-              maxChars: Math.min(input.maxLength ?? 6000, 30000),
-              startPage: input.pageStart ?? 1,
+            pdfResult=await extractPdfTextFromBytes(bytes,{
+              cMapUrl:chrome.runtime.getURL('cmaps/'),
+              maxPages:input.pageCount??20,
+              maxChars:Math.min(input.maxLength??6000,30000),
+              startPage:input.pageStart??1
             });
           } else {
             pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxPages: input.pageCount ?? 20, maxChars: Math.min(input.maxLength ?? 6000, 30000), startPage: input.pageStart ?? 1 });
