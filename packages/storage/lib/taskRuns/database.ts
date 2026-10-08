@@ -49,7 +49,7 @@ export async function withTaskRunTransaction<T>(
   const db = await openTaskRunDatabase();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(stores as string[], mode);
-    let value: T;
+    let value: T | undefined;
     Promise.resolve(fn(tx))
       .then(result => {
         value = result;
@@ -59,7 +59,11 @@ export async function withTaskRunTransaction<T>(
     tx.onabort = () => reject(tx.error ?? new Error('Task transaction aborted'));
     tx.oncomplete = () => {
       db.close();
-      resolve(value);
+      if (value === undefined) {
+        reject(new Error('Task transaction completed without a result'));
+      } else {
+        resolve(value);
+      }
     };
   });
 }
