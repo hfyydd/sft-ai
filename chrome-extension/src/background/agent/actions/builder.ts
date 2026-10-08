@@ -33,6 +33,7 @@ import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
 import { decodeBase64ToBytes, extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
 import { requestApproval } from '../../task/approval-gate';
+import { taskRunStore } from '@extension/storage';
 
 const logger = createLogger('Action');
 
@@ -161,6 +162,19 @@ export class ActionBuilder {
   constructor(context: AgentContext, extractorLLM: BaseChatModel) {
     this.context = context;
     this.extractorLLM = extractorLLM;
+  }
+
+  private async persistEvidence(source:'dom'|'pdf'|'vision', tabId:number, url:string, title:string, content:string, pageNumber?:number){
+    try {
+      await taskRunStore.addEvidence({
+        id: crypto.randomUUID(),
+        runId: this.context.taskId,
+        source, tabId, url, title, capturedAt: Date.now(), pageNumber,
+        content: content.length > 50000 ? content.slice(0,50000) + '\\n…[证据已截断]' : content,
+      });
+    } catch (error) {
+      logger.warning('Failed to persist page evidence:', error);
+    }
   }
 
   buildDefaultActions() {
@@ -455,6 +469,7 @@ export class ActionBuilder {
           }
           if (pdfResult.text) {
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})`;
+            await this.persistEvidence('pdf', page.tabId, tabUrl, tabInfo.title || '', pdfResult.text);
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
             return new ActionResult({
               extractedContent: formatPageEvidence(
@@ -522,6 +537,7 @@ export class ActionBuilder {
           return new ActionResult({ extractedContent: emptyMsg, includeInMemory: true });
         }
         const okMsg = t('act_readPage_vision_ok');
+        await this.persistEvidence('vision', page.tabId, tabUrl, tabInfo.title || '', text);
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, okMsg);
         return new ActionResult({
           extractedContent: formatPageEvidence(
@@ -532,6 +548,7 @@ export class ActionBuilder {
           includeInMemory: true,
         });
       }
+      await this.persistEvidence('dom', page.tabId, tabUrl, tabInfo.title || '', text);
       return new ActionResult({
         extractedContent: formatPageEvidence(
           'dom',
