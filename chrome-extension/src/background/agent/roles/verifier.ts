@@ -64,7 +64,7 @@ export class TaskVerifier {
     try {
       return verificationSchema.parse(JSON.parse(raw));
     } catch {
-      const passed = /\"passed\"\s*:\s*true/i.test(raw);
+      const passed = /"passed"\s*:\s*true/i.test(raw);
       return { passed, reason: '模型校验结果解析为兜底模式', evidenceIds: [] };
     }
   }
