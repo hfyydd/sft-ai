@@ -30,6 +30,14 @@ import { HistoryTreeProcessor } from '@src/background/browser/dom/history/servic
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
 
+const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url']);
+
+async function hashActionArgs(value: unknown) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+}
+
 const logger = createLogger('NavigatorAgent');
 
 interface ParsedModelOutput {
@@ -415,9 +423,22 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }
         }
 
+        if (PENDING_WRITE_TOOLS.has(actionName)) {
+          this.context.pendingWrite = {
+            toolName: actionName,
+            parameterHash: await hashActionArgs(actionArgs),
+            tabId: browserState.tabId,
+            url: browserState.url,
+            startedAt: Date.now(),
+          };
+        }
+
         const result = await actionInstance.call(actionArgs);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
+        }
+        if (PENDING_WRITE_TOOLS.has(actionName)) {
+          this.context.pendingWrite = undefined;
         }
 
         // if the action has an index argument, record the interacted element to the result
