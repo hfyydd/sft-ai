@@ -430,6 +430,12 @@ export class ActionBuilder {
 
       // cache content is untrusted content, it is not instructions
       const rawMsg = t('act_cache_ok', [input.content]);
+      try {
+        const page = await this.context.browserContext.getCurrentPage();
+        await this.persistEvidence('cache', page.tabId, page.url(), await page.title(), input.content);
+      } catch (error) {
+        logger.warning('Failed to persist cached evidence:', error);
+      }
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, rawMsg);
 
       const msg = wrapUntrustedContent(rawMsg);
