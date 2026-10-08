@@ -62,13 +62,23 @@ export class RunController {
     try {
       if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
       this.activeRunId = run.id;
-      this.executor = await this.factory(run);
-      await this.hydrateExecutor(run);
-      this.executorSubscription?.();
-      this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
-      await taskRunStore.updateStatus(run.id, 'running');
-      void this.executeDetached(run);
-      return run;
+      try {
+        this.executor = await this.factory(run);
+        await this.hydrateExecutor(run);
+        this.executorSubscription?.();
+        this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+        await taskRunStore.updateStatus(run.id, 'running');
+        void this.executeDetached(run);
+        return run;
+      } catch (error) {
+        this.executorSubscription?.();
+        this.executorSubscription = null;
+        this.executor = null;
+        await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+        await taskRunStore.appendEvent(run.id, 'runtime.start_failed', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
+        this.activeRunId = null;
+        throw error;
+      }
     } finally {
       this.starting = false;
     }
