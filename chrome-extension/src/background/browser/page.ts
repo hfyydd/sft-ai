@@ -1118,6 +1118,28 @@ export default class Page {
     return handle.evaluate((node, expected) => node instanceof HTMLSelectElement && node.selectedOptions.length > 0 && node.selectedOptions[0].text.trim() === expected, expectedText);
   }
 
+  async getInputValue(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => {
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return el.value;
+      if (el instanceof HTMLElement && el.isContentEditable) return el.textContent ?? '';
+      return null;
+    });
+  }
+
+  async getSelectedOptionText(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text?.trim() ?? null) : null);
+  }
+
   async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
     const element = await this.locateElement(elementNode);
     if (!element) return false;
