@@ -240,6 +240,20 @@ chrome.runtime.onConnect.addListener(port => {
             }
           }
 
+          case 'get_run_events_before': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            try {
+              const events = await taskRunStore.getEventsBefore(
+                message.runId,
+                Number(message.beforeSequence || Number.MAX_SAFE_INTEGER),
+                Math.min(Number(message.limit || 100), 200),
+              );
+              return port.postMessage({ type: 'run_events_before', version: RUNTIME_PROTOCOL_VERSION, events });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
           case 'get_run_events': {
             if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
             try {
