@@ -13,6 +13,7 @@ export class DeterministicChatModel extends SimpleChatModel {
   }
 
   async _call(messages: BaseMessage[]) {
+    void messages;
     const output = this.outputs[Math.min(this.cursor++, this.outputs.length - 1)];
     return output ?? '{}';
   }
