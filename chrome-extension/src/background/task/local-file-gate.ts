@@ -85,6 +85,20 @@ export async function resolveLocalPdfBytes(input: {
     return false;
   }
   if (bytes.byteLength > MAX_PDF_BYTES) return false;
+  const header = new TextDecoder().decode(bytes.slice(0, 5));
+  if (header !== '%PDF-') {
+    await taskRunStore.appendEvent(input.runId, 'file.read_failed', {
+      requestId: input.requestId,
+      error: '读取的文件不是有效 PDF',
+    }).catch(() => undefined);
+    const waiter = pending.get(input.requestId);
+    if (waiter) {
+      pending.delete(input.requestId);
+      waiter.reject(new Error('读取到的文件不是有效 PDF'));
+    }
+    await taskRunStore.updateStatus(input.runId, 'failed').catch(() => undefined);
+    return true;
+  }
 
   const event = await taskRunStore.appendEvent(input.runId, 'file.read_completed', {
     requestId: input.requestId,
