@@ -4,8 +4,7 @@ const MAX_PLAN_STEPS = 50;
 
 export function normalizePlanSteps(steps: PlanStep[] | undefined, nextSteps: string): PlanStep[] {
   const source = steps && steps.length ? steps : nextSteps
-    .split(/
-|;|(?<=d\.)\s+/)
+    .split(/\n|;|(?<=\d\.)\s+/)
     .map(s => s.replace(/^\s*(?:[-*]|\d+[.)])\s*/, '').trim())
     .filter(Boolean)
     .map((title, i) => ({
