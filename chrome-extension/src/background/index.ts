@@ -11,7 +11,6 @@ import { t } from '@extension/i18n';
 import BrowserContext from './browser/context';
 import { Executor } from './agent/executor';
 import { createLogger } from './log';
-import { ExecutionState } from './agent/event/types';
 import { createChatModel } from './agent/helper';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { DEFAULT_AGENT_OPTIONS } from './agent/types';
@@ -346,9 +345,13 @@ chrome.runtime.onConnect.addListener(port => {
                   type: event.type,
                   timestamp: event.timestamp,
                   payload: event.payload,
-                  actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload ? (event.payload as any).actor : 'system',
+                  actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload
+                    ? String((event.payload as { actor?: unknown }).actor ?? 'system')
+                    : 'system',
                   state: event.type,
-                  data: event.payload && typeof event.payload === 'object' && 'data' in event.payload ? (event.payload as any).data : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
+                  data: event.payload && typeof event.payload === 'object' && 'data' in event.payload
+                    ? (event.payload as { data?: unknown }).data
+                    : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
 
                 },
               });
@@ -570,7 +573,8 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
 }
 
 // Update subscribeToExecutorEvents to use port
-function subscribeToExecutorEvents(_executor: Executor): () => void {
+function subscribeToExecutorEvents(executor: Executor): () => void {
+  void executor;
   const runId = runController.getRunId();
   if (!runId) return () => undefined;
   if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
