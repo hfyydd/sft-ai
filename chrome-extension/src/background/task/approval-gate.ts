@@ -110,16 +110,6 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
 
   if (!approved) return false;
 
-  // Persist the exact approved action until the caller actually consumes it.
-  const checkpoint = await taskRunStore.getCheckpoint(input.runId);
-  if (checkpoint) {
-    const event = await taskRunStore.appendEvent(input.runId, 'approval.ready', { nonce, parameterHash });
-    await clearPending(input.runId, event.sequence, checkpoint, {
-      pendingAction: undefined,
-      approvedAction: action,
-      pendingWrite: checkpoint.pendingWrite,
-    });
-  }
   return true;
 }
 
@@ -141,7 +131,7 @@ export async function resolveApproval(input: {
     const tab = await chrome.tabs.get(action.tabId).catch(() => null);
     if (!tab?.id || (action.url && tab.url !== action.url)) {
       const event = await taskRunStore.appendEvent(input.runId, 'approval.invalidated', { nonce: input.nonce, reason: 'tab_or_url_changed' });
-      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined }).catch(() => undefined);
+      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined, approvedAction: undefined }).catch(() => undefined);
       const resolve = pending.get(input.nonce);
       pending.delete(input.nonce);
       resolve?.(false);
@@ -151,6 +141,7 @@ export async function resolveApproval(input: {
   }
 
   const resolve = pending.get(input.nonce);
+  const liveExecutorWaiter = Boolean(resolve);
   if (resolve) pending.delete(input.nonce);
   const event = await taskRunStore.appendEvent(
     input.runId,
@@ -161,12 +152,17 @@ export async function resolveApproval(input: {
   if (input.approved) {
     await clearPending(input.runId, event.sequence, checkpoint, {
       pendingAction: undefined,
-      approvedAction: action,
+      approvedAction: liveExecutorWaiter ? undefined : action,
+      pendingWrite: checkpoint.pendingWrite,
     });
     await taskRunStore.updateStatus(input.runId, 'running');
     resolve?.(true);
   } else {
-    await clearPending(input.runId, event.sequence, checkpoint, { pendingAction: undefined, approvedAction: undefined });
+    await clearPending(input.runId, event.sequence, checkpoint, {
+      pendingAction: undefined,
+      approvedAction: undefined,
+      pendingWrite: checkpoint.pendingWrite,
+    });
     await taskRunStore.updateStatus(input.runId, 'cancelled');
     resolve?.(false);
   }
