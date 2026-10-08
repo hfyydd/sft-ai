@@ -20,6 +20,14 @@ import { filterExternalContent } from '../messages/utils';
 const logger = createLogger('PlannerAgent');
 
 // Define Zod schema for planner output
+const planStepSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  successCriteria: z.string().min(1),
+  status: z.enum(['queued','running','completed','blocked','skipped']),
+  evidenceIds: z.array(z.string()).default([]),
+});
+
 export const plannerOutputSchema = z.object({
   observation: z.string(),
   challenges: z.string(),
@@ -32,6 +40,7 @@ export const plannerOutputSchema = z.object({
     }),
   ]),
   next_steps: z.string(),
+  steps: z.array(planStepSchema).default([]),
   final_answer: z.string(),
   reasoning: z.string(),
   web_task: z.union([
@@ -94,8 +103,15 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       let challenges = filterExternalContent(modelOutput.challenges);
       let reasoning = filterExternalContent(modelOutput.reasoning);
 
+      const steps = modelOutput.steps ?? [];
+      const uniqueIds = new Set<string>();
+      for (const step of steps) {
+        if (uniqueIds.has(step.id)) throw new Error(`Duplicate plan step id: ${step.id}`);
+        uniqueIds.add(step.id);
+      }
       const cleanedPlan: PlannerOutput = {
         ...modelOutput,
+        steps,
         observation,
         challenges,
         reasoning,
