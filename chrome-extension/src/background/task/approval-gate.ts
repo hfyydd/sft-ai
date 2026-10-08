@@ -17,18 +17,48 @@ async function hash(value: string) {
   return Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
 }
 
-async function clearPending(runId: string, sequence: number, checkpoint: TaskCheckpoint) {
-  await taskRunStore.saveCheckpoint({ ...checkpoint, runId, sequence, pendingAction: undefined });
+async function actionMatches(action: PendingAction, input: ApprovalRequest) {
+  if (action.runId !== input.runId || action.toolName !== input.toolName) return false;
+  const parameterHash = await hash(JSON.stringify(input.args));
+  if (action.parameterHash !== parameterHash || (action.expiresAt && action.expiresAt < Date.now())) return false;
+  if (action.tabId !== input.tabId) return false;
+  if ((action.url || '') !== (input.url || '')) return false;
+  return true;
+}
+
+async function clearPending(
+  runId: string,
+  sequence: number,
+  checkpoint: TaskCheckpoint,
+  patch: { pendingAction?: PendingAction; approvedAction?: PendingAction },
+) {
+  await taskRunStore.saveCheckpoint({
+    ...checkpoint,
+    runId,
+    sequence,
+    pendingAction: patch.pendingAction,
+    approvedAction: patch.approvedAction,
+  });
 }
 
 export async function requestApproval(input: ApprovalRequest): Promise<boolean> {
+  const parameterHash = await hash(JSON.stringify(input.args));
+  const existing = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
+  if (existing?.approvedAction && await actionMatches(existing.approvedAction, input)) {
+    const consumed = await taskRunStore.appendEvent(input.runId, 'approval.consumed', {
+      nonce: existing.approvedAction.nonce,
+      parameterHash,
+    });
+    await clearPending(input.runId, consumed.sequence, existing, { pendingAction: undefined, approvedAction: undefined });
+    await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
+    return true;
+  }
+
   const nonce = crypto.randomUUID();
-  const argsSummary = JSON.stringify(input.args);
-  const parameterHash = await hash(argsSummary);
   const action: PendingAction = {
     runId: input.runId,
     toolName: input.toolName,
-    argsSummary,
+    argsSummary: JSON.stringify(input.args),
     tabId: input.tabId,
     url: input.url,
     expiresAt: Date.now() + 5 * 60_000,
@@ -38,7 +68,6 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
 
   await taskRunStore.updateStatus(input.runId, 'waiting_approval');
   const event = await taskRunStore.appendEvent(input.runId, 'approval.requested', { ...action, reason: input.reason });
-
   const current = await taskRunStore.getCheckpoint(input.runId);
   await taskRunStore.saveCheckpoint({
     runId: input.runId,
@@ -51,23 +80,38 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     navigatorState: current?.navigatorState,
     pendingAction: action,
     pendingWrite: current?.pendingWrite,
+    approvedAction: current?.approvedAction,
   });
 
-  void chrome.runtime.sendMessage({ type: 'approval_required', action }).catch(() => undefined);
-  return new Promise<boolean>(resolve => {
+  void chrome.runtime.sendMessage({ type: 'approval_required', action });
+
+  const approved = await new Promise<boolean>(resolve => {
     pending.set(nonce, resolve);
-    setTimeout(() => {
+    setTimeout(async () => {
       if (!pending.has(nonce)) return;
       pending.delete(nonce);
-      if (resolve) resolve(false);
+      resolve(false);
       const checkpoint = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
-      const event = await taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce });
-      if (checkpoint) {
-        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined }).catch(() => undefined);
+      const expired = await taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce }).catch(() => undefined);
+      if (checkpoint && expired) {
+        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: expired.sequence, pendingAction: undefined }).catch(() => undefined);
       }
-      void taskRunStore.updateStatus(input.runId, 'cancelled');
+      await taskRunStore.updateStatus(input.runId, 'cancelled').catch(() => undefined);
     }, 5 * 60_000 + 100);
   });
+
+  if (!approved) return false;
+
+  // Persist the exact approved action until the caller actually consumes it.
+  const checkpoint = await taskRunStore.getCheckpoint(input.runId);
+  if (checkpoint) {
+    const event = await taskRunStore.appendEvent(input.runId, 'approval.ready', { nonce, parameterHash });
+    await clearPending(input.runId, event.sequence, checkpoint, {
+      pendingAction: undefined,
+      approvedAction: action,
+    });
+  }
+  return true;
 }
 
 export async function resolveApproval(input: {
@@ -79,7 +123,6 @@ export async function resolveApproval(input: {
   const run = await taskRunStore.getRun(input.runId);
   if (!run || (run.status !== 'waiting_approval' && run.status !== 'waiting_user')) return false;
 
-  const resolve = pending.get(input.nonce);
   const checkpoint = await taskRunStore.getCheckpoint(input.runId);
   const action = checkpoint?.pendingAction;
   if (!action) return false;
@@ -88,14 +131,17 @@ export async function resolveApproval(input: {
   if (action.tabId !== undefined) {
     const tab = await chrome.tabs.get(action.tabId).catch(() => null);
     if (!tab?.id || (action.url && tab.url !== action.url)) {
+      const event = await taskRunStore.appendEvent(input.runId, 'approval.invalidated', { nonce: input.nonce, reason: 'tab_or_url_changed' });
+      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined }).catch(() => undefined);
+      const resolve = pending.get(input.nonce);
       pending.delete(input.nonce);
-      if (resolve) resolve(false);
-      await taskRunStore.appendEvent(input.runId, 'approval.invalidated', { nonce: input.nonce, reason: 'tab_or_url_changed' });
+      resolve?.(false);
       await taskRunStore.updateStatus(input.runId, 'waiting_user');
       return false;
     }
   }
 
+  const resolve = pending.get(input.nonce);
   if (resolve) pending.delete(input.nonce);
   const event = await taskRunStore.appendEvent(
     input.runId,
@@ -104,13 +150,16 @@ export async function resolveApproval(input: {
   );
 
   if (input.approved) {
-    await clearPending(input.runId, event.sequence, checkpoint);
-    await taskRunStore.updateStatus(input.runId, 'running');
-    if (resolve) resolve(true);
+    await clearPending(input.runId, event.sequence, checkpoint, {
+      pendingAction: undefined,
+      approvedAction: action,
+    });
+    await taskRunStore.updateStatus(input.runId, resolve ? 'running' : 'interrupted');
+    resolve?.(true);
   } else {
-    await clearPending(input.runId, event.sequence, checkpoint);
+    await clearPending(input.runId, event.sequence, checkpoint, { pendingAction: undefined, approvedAction: undefined });
     await taskRunStore.updateStatus(input.runId, 'cancelled');
-    if (resolve) resolve(false);
+    resolve?.(false);
   }
   return true;
 }
