@@ -1063,10 +1063,14 @@ export default class Page {
     const cssSelector = element.enhancedCssSelectorForElement(this._config.includeDynamicAttributes);
 
     try {
-      // Try CSS selector first
-      let elementHandle: ElementHandle | null = await currentFrame.$(cssSelector);
+      // Prefer an unambiguous CSS locator. If it is ambiguous, fall back to XPath.
+      const cssMatches = await currentFrame.$(cssSelector);
+      let elementHandle: ElementHandle | null = cssMatches.length === 1 ? cssMatches[0] : null;
+      if (cssMatches.length > 1) {
+        logger.warning(`Locator matched ${cssMatches.length} elements; attempting XPath fallback`);
+      }
 
-      // If CSS selector failed, try XPath
+      // If CSS selector failed or was ambiguous, try XPath.
       if (!elementHandle) {
         const xpath = element.xpath;
         if (xpath) {
@@ -1074,7 +1078,9 @@ export default class Page {
             logger.info('Trying XPath selector:', xpath);
             const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
             const xpathSelector = `::-p-xpath(${fullXpath})`;
-            elementHandle = await currentFrame.$(xpathSelector);
+            const xpathMatches = await currentFrame.$(xpathSelector);
+            if (xpathMatches.length === 1) elementHandle = xpathMatches[0];
+            else if (xpathMatches.length > 1) logger.warning(`XPath matched ${xpathMatches.length} elements`);
           } catch (xpathError) {
             logger.error('Failed to locate element using XPath:', xpathError);
           }
