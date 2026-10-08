@@ -102,7 +102,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
       const checkpoint = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
       const expired = await taskRunStore.appendEvent(input.runId, 'approval.expired', { nonce }).catch(() => undefined);
       if (checkpoint && expired) {
-        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: expired.sequence, pendingAction: undefined }).catch(() => undefined);
+        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: expired.sequence, pendingAction: undefined, approvedAction: undefined, pendingWrite: undefined }).catch(() => undefined);
       }
       await taskRunStore.updateStatus(input.runId, 'cancelled').catch(() => undefined);
     }, 5 * 60_000 + 100);
@@ -131,7 +131,7 @@ export async function resolveApproval(input: {
     const tab = await chrome.tabs.get(action.tabId).catch(() => null);
     if (!tab?.id || (action.url && tab.url !== action.url)) {
       const event = await taskRunStore.appendEvent(input.runId, 'approval.invalidated', { nonce: input.nonce, reason: 'tab_or_url_changed' });
-      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined, approvedAction: undefined }).catch(() => undefined);
+      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingAction: undefined, approvedAction: undefined, pendingWrite: undefined }).catch(() => undefined);
       const resolve = pending.get(input.nonce);
       pending.delete(input.nonce);
       resolve?.(false);
