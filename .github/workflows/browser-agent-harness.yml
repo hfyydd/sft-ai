@@ -24,6 +24,7 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo ready
       - run: pnpm --filter chrome-extension test
       - run: pnpm type-check
       - run: pnpm exec turbo lint --continue
