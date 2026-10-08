@@ -60,11 +60,45 @@ chrome.tabs.onRemoved.addListener(tabId => {
 });
 
 logger.info('background loaded');
-runController.configure(async run => {
-  if (run.activeTabId === undefined) throw new Error('Task has no target tab');
-  await browserContext.switchTab(run.activeTabId);
-  return setupExecutor(run.id, run.goal, browserContext, run.skillIds);
-});
+runController.configure(
+  async run => {
+    if (run.activeTabId === undefined) throw new Error('Task has no target tab');
+    await browserContext.switchTab(run.activeTabId);
+    return setupExecutor(run.id, run.goal, browserContext, run.skillIds);
+  },
+  async (_run, pendingWrite) => {
+    if (pendingWrite.tabId === undefined) return false;
+    await browserContext.switchTab(pendingWrite.tabId);
+    const page = await browserContext.getCurrentPage();
+
+    if (pendingWrite.toolName === 'close_tab') {
+      const tab = await chrome.tabs.get(pendingWrite.tabId).catch(() => null);
+      return !tab;
+    }
+    if (pendingWrite.toolName === 'go_to_url' || pendingWrite.toolName === 'open_tab') {
+      return page.url() !== (pendingWrite.url || '');
+    }
+    if (pendingWrite.toolName === 'click_element' && pendingWrite.index !== undefined) {
+      return page.verifyClickEffect(pendingWrite.index, pendingWrite.url || '');
+    }
+    if (
+      pendingWrite.expectedValueHash &&
+      pendingWrite.index !== undefined &&
+      (pendingWrite.toolName === 'input_text' || pendingWrite.toolName === 'select_dropdown_option')
+    ) {
+      const value =
+        pendingWrite.toolName === 'select_dropdown_option'
+          ? await page.getSelectedOptionText(pendingWrite.index)
+          : await page.getInputValue(pendingWrite.index);
+      if (value === null) return false;
+      const data = new TextEncoder().encode(JSON.stringify(value));
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      const hash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+      return hash === pendingWrite.expectedValueHash;
+    }
+    return false;
+  },
+);
 void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
 void taskRunStore.cleanupRetention().catch(error => logger.error('Failed to cleanup task runtime retention:', error));
 
