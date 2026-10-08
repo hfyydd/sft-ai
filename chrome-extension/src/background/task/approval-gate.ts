@@ -1,4 +1,4 @@
-import { taskRunStore, type PendingAction, type TaskCheckpoint } from '@extension/storage';
+import { taskRunStore, type PendingAction, type PendingWrite, type TaskCheckpoint } from '@extension/storage';
 
 interface ApprovalRequest {
   runId: string;
@@ -30,7 +30,7 @@ async function clearPending(
   runId: string,
   sequence: number,
   checkpoint: TaskCheckpoint,
-  patch: { pendingAction?: PendingAction; approvedAction?: PendingAction },
+  patch: { pendingAction?: PendingAction; approvedAction?: PendingAction; pendingWrite?: PendingWrite },
 ) {
   await taskRunStore.saveCheckpoint({
     ...checkpoint,
@@ -38,6 +38,7 @@ async function clearPending(
     sequence,
     pendingAction: patch.pendingAction,
     approvedAction: patch.approvedAction,
+    pendingWrite: patch.pendingWrite,
   });
 }
 
@@ -79,7 +80,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     activeTabId: input.tabId,
     navigatorState: current?.navigatorState,
     pendingAction: action,
-    pendingWrite: current?.pendingWrite,
+    pendingWrite: undefined,
     approvedAction: current?.approvedAction,
   });
 
@@ -109,6 +110,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     await clearPending(input.runId, event.sequence, checkpoint, {
       pendingAction: undefined,
       approvedAction: action,
+      pendingWrite: undefined,
     });
   }
   return true;
