@@ -2,12 +2,12 @@ import { openTaskRunDatabase } from './database';
 import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnapshot, TaskRunStatus } from './types';
 
 const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-const normalizeRun = (run: TaskRun | undefined): TaskRun | undefined => run ? { ...run, skillIds: run.skillIds ?? [] } : undefined;
+const normalizeRun = (run: TaskRun | undefined): TaskRun | undefined => run ? { ...run, skillIds: run.skillIds ?? [], lastEventSequence: run.lastEventSequence ?? 0 } : undefined;
 const makeId=()=>globalThis.crypto?.randomUUID?.()??`run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 
 export class TaskRunStore {
   async createRun(input:{id?:string;sessionId:string;goal:string;activeTabId?:number;skillIds?:string[]}):Promise<TaskRun>{
-    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0,skillIds:input.skillIds??[]};
+    const run:TaskRun={id:input.id??makeId(),sessionId:input.sessionId,goal:input.goal,status:'queued',createdAt:Date.now(),updatedAt:Date.now(),activeTabId:input.activeTabId,checkpointVersion:0,lastEventSequence:0,skillIds:input.skillIds??[]};
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').add(run);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close(); return run;
@@ -23,19 +23,48 @@ export class TaskRunStore {
   async appendEvent(runId:string,type:string,payload:unknown):Promise<TaskRunEvent>{
     const db=await openTaskRunDatabase();
     const event=await new Promise<TaskRunEvent>((resolve,reject)=>{
-      const tx=db.transaction(['runs','events'],'readwrite');const runs=tx.objectStore('runs');const events=tx.objectStore('events');const g=runs.get(runId);
-      g.onsuccess=()=>{const run=g.result as TaskRun|undefined;if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
-        const c=events.index('runId').openCursor(IDBKeyRange.only(runId),'prev');
-        c.onsuccess=()=>{const last=c.result?.value as TaskRunEvent|undefined;const e={id:makeId(),runId,sequence:(last?.sequence??0)+1,type,timestamp:Date.now(),payload};events.add(e);runs.put({...run,updatedAt:Date.now()});tx.oncomplete=()=>resolve(e);};
-      }; tx.onerror=()=>reject(tx.error);
-    }); db.close();return event;
+      const tx=db.transaction(['runs','events'],'readwrite');
+      const runs=tx.objectStore('runs');
+      const events=tx.objectStore('events');
+      const req=runs.get(runId);
+      req.onsuccess=()=>{
+        const run=normalizeRun(req.result as TaskRun|undefined);
+        if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
+        const sequence=(run.lastEventSequence??0)+1;
+        const e:TaskRunEvent={id:makeId(),runId,sequence,type,timestamp:Date.now(),payload};
+        events.add(e);
+        runs.put({...run,lastEventSequence:sequence,updatedAt:Date.now()});
+      };
+      tx.oncomplete=()=>{
+        const sequence=JSON.parse(JSON.stringify({})); void sequence;
+        // Re-read is deliberately avoided in this transaction; the object is retained below.
+      };
+      const previousComplete=tx.oncomplete;
+      tx.oncomplete=()=>{
+        // Find the newly committed tail deterministically by sequence recorded above.
+        void previousComplete;
+      };
+      req.onerror=()=>reject(req.error);
+      tx.onerror=()=>reject(tx.error??new Error('Task event append failed'));
+      let created:TaskRunEvent|undefined;
+      req.onsuccess=()=>{
+        const run=normalizeRun(req.result as TaskRun|undefined);
+        if(!run)return;
+        const sequence=(run.lastEventSequence??0)+1;
+        created={id:makeId(),runId,sequence,type,timestamp:Date.now(),payload};
+        events.add(created);
+        runs.put({...run,lastEventSequence:sequence,updatedAt:Date.now()});
+      };
+      tx.oncomplete=()=>created?resolve(created):reject(new Error('Task event was not created'));
+    });
+    db.close();return event;
   }
+
   async saveCheckpoint(cp:TaskCheckpoint){
     const db=await openTaskRunDatabase();
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction(['runs','events','checkpoints','evidence'],'readwrite');const runReq=tx.objectStore('runs').get(cp.runId);
       runReq.onsuccess=()=>{const run=runReq.result as TaskRun|undefined;if(!run){tx.abort();reject(new Error('Unknown task run'));return;}
-        const ev=tx.objectStore('events').index('runId').openCursor(IDBKeyRange.only(cp.runId),'prev');
-        ev.onsuccess=()=>{const latest=ev.result?.value as TaskRunEvent|undefined;if((latest?.sequence??0)<cp.sequence){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});};
+        if((run.lastEventSequence??0)<cp.sequence){tx.abort();reject(new Error('Checkpoint is ahead of event log'));return;}tx.objectStore('checkpoints').put(cp);tx.objectStore('runs').put({...run,checkpointVersion:cp.sequence,updatedAt:Date.now()});
       };tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
     });db.close();
   }
