@@ -101,6 +101,16 @@ runController.configure(
     if (pendingWrite.toolName === 'click_element' && pendingWrite.index !== undefined) {
       return page.verifyClickEffect(pendingWrite.index, pendingWrite.url || '');
     }
+    if (pendingWrite.toolName === 'go_back') {
+      if (page.url() !== (pendingWrite.url || '')) return true;
+      if (pendingWrite.beforeObservationSignature) {
+        return (await page.getObservationSignature()) !== pendingWrite.beforeObservationSignature;
+      }
+      return false;
+    }
+    if (pendingWrite.toolName === 'send_keys' && pendingWrite.beforeObservationSignature) {
+      return (await page.getObservationSignature()) !== pendingWrite.beforeObservationSignature;
+    }
     if (
       pendingWrite.expectedValueHash &&
       pendingWrite.index !== undefined &&
