@@ -1,3 +1,4 @@
+import { taskRunStore } from '../taskRuns';
 import { createStorage } from '../base/base';
 import { StorageEnum } from '../base/enums';
 import type {
@@ -160,6 +161,9 @@ export function createChatHistoryStorage(): ChatHistoryStorage {
       // Remove the session's messages
       const messagesStorage = getSessionMessagesStorage(sessionId);
       await messagesStorage.set([]);
+      // Keep durable task runtime data in sync with chat history deletion.
+      const runs = await taskRunStore.listActiveRuns();
+      await Promise.all(runs.filter(run => run.sessionId === sessionId).map(run => taskRunStore.removeRun(run.id)));
     },
 
     addMessage: async (sessionId: string, message: Message): Promise<ChatMessage> => {
