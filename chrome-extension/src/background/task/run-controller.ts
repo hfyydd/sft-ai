@@ -13,7 +13,8 @@ export class RunController {
   private executor: Executor | null = null;
   private activeRunId: string | null = null;
   private factory: RunControllerFactory | null = null;
-  private subscribers = new Set<(event: AgentEvent) => Promise<void> | void>();
+  private subscribers = new Set<(event: AgentEvent, sequence: number) => Promise<void> | void>();
+  private subscriberEntries = new Set<{ callback: (event: AgentEvent, sequence: number) => Promise<void> | void }>();
   private starting = false;
   private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
   private executorSubscription: (() => void) | null = null;
@@ -23,9 +24,10 @@ export class RunController {
     this.verifier = verifier ?? null;
   }
 
-  subscribe(callback: (event: AgentEvent) => Promise<void> | void) {
-    this.subscribers.add(callback);
-    return () => this.subscribers.delete(callback);
+  subscribe(callback: (event: AgentEvent, sequence: number) => Promise<void> | void) {
+    const wrapped = { callback };
+    this.subscriberEntries.add(wrapped);
+    return () => this.subscriberEntries.delete(wrapped);
   }
 
   async initialize() {
@@ -149,6 +151,10 @@ export class RunController {
         pendingAction: currentCheckpoint?.pendingAction,
         pendingUserRequest: currentCheckpoint?.pendingUserRequest,
         pendingFileRead: currentCheckpoint?.pendingFileRead,
+        nSteps: snapshot.step,
+        replanCount: snapshot.planner?.replanCount ?? undefined,
+        startedAt: snapshot.startedAt,
+        finalAnswer: snapshot.finalAnswer,
       }).catch(async error => {
         if (error instanceof Error && error.message === 'Stale checkpoint') return;
 
@@ -157,7 +163,8 @@ export class RunController {
         await this.executor?.pause().catch(() => undefined);
       });
     }
-    for (const subscriber of this.subscribers) await subscriber(event);
+    for (const subscriber of this.subscribers) await subscriber(event, persisted.sequence);
+    for (const entry of this.subscriberEntries) await entry.callback(event, persisted.sequence);
   }
 
   async continueWithFollowUp(runId: string, task: string) {
