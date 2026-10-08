@@ -19,6 +19,14 @@ export interface PlanStep {
   evidenceIds: string[];
 }
 
+export interface PendingWrite {
+  toolName: string;
+  parameterHash: string;
+  tabId?: number;
+  url?: string;
+  startedAt: number;
+}
+
 export interface PendingAction {
   runId: string;
   toolName: string;
@@ -65,6 +73,7 @@ export interface TaskCheckpoint {
   plan: PlanStep[];
   completedStepIds: string[];
   pendingAction?: PendingAction;
+  pendingWrite?: PendingWrite;
   pendingUserRequest?: PendingUserRequest;
   memory: MemoryFact[];
   evidenceIds: string[];
