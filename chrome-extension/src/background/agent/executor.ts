@@ -27,6 +27,7 @@ import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
 import type { ToolPolicy } from '../services/toolPolicy';
 import type { TaskCheckpoint, PlanStep } from '@extension/storage';
+import { classifyFailure, recoveryAdvice } from './recovery';
 
 const logger = createLogger('Executor');
 
@@ -327,7 +328,9 @@ export class Executor {
       // Agent Loop v2: 动作级失败写入工作记忆,供下一轮规划反思
       for (const r of context.actionResults) {
         if (r.error) {
-          context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
+          const failureClass = classifyFailure(error);
+      context.taskMemory.add('失败分类:' + failureClass + '。恢复策略:' + recoveryAdvice(failureClass) + '。');
+      context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
         }
       }
       if (navOutput.result?.done) {
