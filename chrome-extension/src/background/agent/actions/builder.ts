@@ -908,12 +908,15 @@ export class ActionBuilder {
 
         try {
           const result = await page.selectDropdownOption(input.index, input.text);
+          const verified = await page.verifyDropdownSelection(input.index, input.text);
+          if (!verified) {
+            const errorMsg = '下拉框写入后回读校验失败: index=' + input.index;
+            this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg);
+            return new ActionResult({ error: errorMsg, includeInMemory: true });
+          }
           const msg = t('act_selectDropdownOption_ok', [input.text, input.index.toString()]);
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
-          return new ActionResult({
-            extractedContent: result,
-            includeInMemory: true,
-          });
+          return new ActionResult({ extractedContent: result, success: true, includeInMemory: true });
         } catch (error) {
           const errorMsg = t('act_selectDropdownOption_failed', [
             error instanceof Error ? error.message : String(error),
