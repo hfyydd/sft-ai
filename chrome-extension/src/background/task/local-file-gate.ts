@@ -60,12 +60,24 @@ export async function requestLocalPdfBytes(input: {
 export async function resolveLocalPdfBytes(input: {
   runId: string;
   requestId: string;
-  dataBase64: string;
+  dataBase64?: string;
+  error?: string;
 }): Promise<boolean> {
   const checkpoint = await taskRunStore.getCheckpoint(input.runId);
   const request = checkpoint?.pendingFileRead;
   if (!request || request.runId !== input.runId || request.requestId !== input.requestId || request.expiresAt < Date.now()) return false;
 
+  if (input.error) {
+    const waiter = pending.get(input.requestId);
+    if (waiter) {
+      pending.delete(input.requestId);
+      waiter.reject(new Error(input.error));
+    }
+    await taskRunStore.appendEvent(input.runId, 'file.read_failed', { requestId: input.requestId, error: input.error });
+    await taskRunStore.updateStatus(input.runId, 'failed').catch(() => undefined);
+    return true;
+  }
+  if (!input.dataBase64) return false;
   let bytes: Uint8Array;
   try {
     bytes = decodeBase64ToBytes(input.dataBase64);
