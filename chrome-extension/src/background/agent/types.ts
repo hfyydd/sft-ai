@@ -6,6 +6,7 @@ import type MessageManager from './messages/service';
 import type { EventManager } from './event/manager';
 import { type Actors, type ExecutionState, AgentEvent } from './event/types';
 import { AgentStepHistory } from './history';
+import type { ToolPolicy } from '../services/toolPolicy';
 
 export interface AgentOptions {
   maxSteps: number;
@@ -52,6 +53,7 @@ export class AgentContext {
   history: AgentStepHistory;
   finalAnswer: string | null;
   taskMemory: TaskMemory;
+  toolPolicy?: ToolPolicy;
 
   constructor(
     taskId: string,
@@ -59,6 +61,7 @@ export class AgentContext {
     messageManager: MessageManager,
     eventManager: EventManager,
     options: Partial<AgentOptions>,
+    toolPolicy?: ToolPolicy,
   ) {
     this.controller = new AbortController();
     this.taskId = taskId;
@@ -77,6 +80,7 @@ export class AgentContext {
     this.history = new AgentStepHistory();
     this.finalAnswer = null;
     this.taskMemory = new TaskMemory();
+    this.toolPolicy = toolPolicy;
   }
 
   async emitEvent(actor: Actors, state: ExecutionState, eventDetails: string) {
