@@ -175,6 +175,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg?.type === 'get_latest_active_run') {
+    taskRunStore.listActiveRuns()
+      .then(runs => sendResponse({ ok: true, run: runs.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   if (msg?.type === 'get_latest_run_for_session' && typeof msg.sessionId === 'string') {
     taskRunStore.listBySession(msg.sessionId)
       .then(runs => sendResponse({ ok: true, run: runs.sort((a,b) => b.updatedAt - a.updatedAt)[0] }))
