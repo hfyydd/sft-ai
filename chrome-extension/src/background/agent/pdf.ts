@@ -139,6 +139,16 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
   return { text: text.trim(), numPages, extractedPages, truncated, startPage, nextPageStart };
 }
 
+export function buildPdfPageUrl(url: string, pageNumber: number): string {
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) throw new Error('PDF 页码必须是正整数');
+  const parsed = new URL(url);
+  if (!['http:', 'https:', 'file:'].includes(parsed.protocol)) {
+    throw new Error('PDF 页面导航只允许 http(s) 或 file:// URL');
+  }
+  parsed.hash = 'page=' + pageNumber;
+  return parsed.href;
+}
+
 async function readResponseBytesBounded(response: Response, maxBytes: number): Promise<Uint8Array> {
   if (!response.body) {
     const fallback = new Uint8Array(await response.arrayBuffer());
