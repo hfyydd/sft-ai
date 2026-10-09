@@ -139,6 +139,40 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
   return { text: text.trim(), numPages, extractedPages, truncated, startPage, nextPageStart };
 }
 
+async function readResponseBytesBounded(response: Response, maxBytes: number): Promise<Uint8Array> {
+  if (!response.body) {
+    const fallback = new Uint8Array(await response.arrayBuffer());
+    if (fallback.byteLength > maxBytes) throw new Error(`PDF 文件超过 ${maxBytes} 字节限制`);
+    return fallback;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel('PDF exceeds configured byte limit').catch(() => undefined);
+        throw new Error(`PDF 文件超过 ${maxBytes} 字节限制`);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return result;
+}
+
 /**
  * 从 http(s)/file URL 读取 PDF 并提取文本层。
  * - http(s):fetch 走扩展 host_permissions,可跨域读取政务系统附件
@@ -151,7 +185,7 @@ export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOpt
   }
   const contentLength = Number(res.headers.get('content-length') || 0);
   if (contentLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
-  const data = new Uint8Array(await res.arrayBuffer());
+  const data = await readResponseBytesBounded(res, MAX_PDF_BYTES);
   validatePdfBytes(data);
   return extractPdfData(data, options);
 }
