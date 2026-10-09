@@ -504,7 +504,17 @@ const SidePanel = () => {
           setRunEvidence(message.evidence || []);
         } else if (message && message.type === 'run_events_before') {
           const events = message.events || [];
-          setRunSnapshot((prev: any) => prev ? { ...prev, events: [...events, ...(prev.events || [])] } : prev);
+          setRunSnapshot((prev: any) => {
+            if (!prev) return prev;
+            const bySequence = new Map<number, any>();
+            for (const event of [...events, ...(prev.events || [])]) {
+              if (event?.runId === prev.run?.id && typeof event.sequence === 'number') {
+                bySequence.set(event.sequence, event);
+              }
+            }
+            const merged = [...bySequence.values()].sort((a: any, b: any) => a.sequence - b.sequence);
+            return { ...prev, events: merged.slice(-500) };
+          });
           setTimelineHasMore(events.length > 0 && events[0]?.sequence > 1);
         } else if (message && message.type === 'error') {
           // Handle error messages from service worker
