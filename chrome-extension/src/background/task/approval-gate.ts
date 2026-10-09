@@ -71,6 +71,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
   if (existing?.approvedAction && await actionMatches(existing.approvedAction, input)) {
     const consumed = await taskRunStore.appendEvent(input.runId, 'approval.consumed', {
       nonce: existing.approvedAction.nonce,
+      toolName: existing.approvedAction.toolName,
       parameterHash,
     });
     await clearPending(input.runId, consumed.sequence, existing, {
@@ -173,7 +174,7 @@ export async function resolveApproval(input: {
   const event = await taskRunStore.appendEvent(
     input.runId,
     input.approved ? 'approval.approved' : 'approval.rejected',
-    { nonce: input.nonce, parameterHash: input.parameterHash },
+    { nonce: input.nonce, toolName: action.toolName, parameterHash: input.parameterHash },
   );
 
   if (input.approved) {
