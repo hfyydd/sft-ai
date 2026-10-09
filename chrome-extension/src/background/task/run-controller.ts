@@ -325,8 +325,11 @@ export class RunController {
         await taskRunStore.updateStatus(runId, run.status, { activeTabId: nextTabId }).catch(() => undefined);
         return;
       }
-      await taskRunStore.updateStatus(runId, 'interrupted').catch(() => undefined);
-      await taskRunStore.appendEvent(runId, 'runtime.no_safe_tab_after_close', { tabId });
+      await taskRunStore.updateStatus(runId, 'failed').catch(() => undefined);
+      await taskRunStore.appendEvent(runId, 'runtime.no_safe_tab_after_close', {
+        tabId,
+        error: '关闭操作后没有可供继续执行且符合 URL 策略的标签页',
+      });
       if (this.executor) {
         await this.executor.cleanup().catch(() => undefined);
         this.executorSubscription?.();
