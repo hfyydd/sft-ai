@@ -837,20 +837,23 @@ export class ActionBuilder {
         }
       }
 
-      // 常规页面:注入脚本读取 DOM 文本(错误页等注入失败时 text 保持为空)
+      // Native PDF viewers sometimes expose a non-empty shell DOM. Do not mistake
+      // that shell for PDF content; an empty PDF text layer must go through visual page extraction.
       let text = '';
-      try {
-        const [result] = await chrome.scripting.executeScript({
-          target: { tabId: page.tabId },
-          func: (maxLen: number) => {
-            const text = document.body?.innerText ?? '';
-            return text.length > maxLen ? text.slice(0, maxLen) + '…[已截断]' : text;
-          },
-          args: [input.maxLength || 6000],
-        });
-        text = ((result?.result as string) || '').trim();
-      } catch (error) {
-        logger.warning('read_page: DOM 文本读取失败:', error);
+      if (!pdfAttempted) {
+        try {
+          const [result] = await chrome.scripting.executeScript({
+            target: { tabId: page.tabId },
+            func: (maxLen: number) => {
+              const text = document.body?.innerText ?? '';
+              return text.length > maxLen ? text.slice(0, maxLen) + '…[已截断]' : text;
+            },
+            args: [input.maxLength || 6000],
+          });
+          text = ((result?.result as string) || '').trim();
+        } catch (error) {
+          logger.warning('read_page: DOM 文本读取失败:', error);
+        }
       }
 
       // Textless PDF pages need bounded visual extraction for the requested page range.
