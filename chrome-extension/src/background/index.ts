@@ -259,6 +259,7 @@ chrome.runtime.onConnect.addListener(port => {
             });
             currentExecutor = runController.getExecutor();
             if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            port.postMessage({ type: 'run_started', version: RUNTIME_PROTOCOL_VERSION, runId, sessionId });
             break;
           }
 
@@ -275,6 +276,7 @@ chrome.runtime.onConnect.addListener(port => {
             await runController.continueWithFollowUp(run.id, message.task);
             currentExecutor = runController.getExecutor();
             if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            port.postMessage({ type: 'run_started', version: RUNTIME_PROTOCOL_VERSION, runId: run.id, sessionId: run.sessionId });
             break;
           }
 
