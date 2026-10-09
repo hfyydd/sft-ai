@@ -411,15 +411,16 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         if (actionInstance === undefined) {
           throw new Error(`Action ${actionName} not exists`);
         }
+        const parsedActionArgs = actionInstance.schema.schema.safeParse(actionArgs);
+        const normalizedActionArgs = parsedActionArgs.success ? parsedActionArgs.data : actionArgs;
 
         // A restored one-time approval is valid only for the exact next tool,
         // arguments and source page. Invalidate it before executing even a
         // read-only replacement action; otherwise it could linger until reused.
         if (this.context.approvedAction) {
           const approved = this.context.approvedAction;
-          const parsedArgs = actionInstance.schema.schema.safeParse(actionArgs);
-          const comparableArgs = parsedArgs.success ? parsedArgs.data : actionArgs;
-          const candidateHash = await hashActionArgs(comparableArgs);
+          const comparableArgs = normalizedActionArgs;
+          const candidateHash = await hashActionArgs(normalizedActionArgs);
           let currentTabId: number | undefined;
           let currentUrl = '';
           try {
@@ -503,7 +504,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         if (PENDING_WRITE_TOOLS.has(actionName)) {
           const pendingWrite: NonNullable<typeof this.context.pendingWrite> = {
             toolName: actionName,
-            parameterHash: await hashActionArgs(actionArgs),
+            parameterHash: await hashActionArgs(normalizedActionArgs),
             tabId: actionName === 'close_tab' && actionArgs && typeof actionArgs === 'object' && 'tab_id' in actionArgs
               ? Number(actionArgs.tab_id)
               : browserState.tabId,
@@ -533,7 +534,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           this.context.pendingWrite = pendingWrite;
         }
 
-        const actionParameterHash = await hashActionArgs(actionArgs);
+        const actionParameterHash = await hashActionArgs(normalizedActionArgs);
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
           parameterHash: actionParameterHash,
