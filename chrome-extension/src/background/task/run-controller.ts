@@ -286,6 +286,12 @@ export class RunController {
     const targetId = this.activeRunId ?? runId;
     if (!targetId) throw new Error('No active task');
     if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
+    const run = await taskRunStore.getRun(targetId);
+    if (!run) throw new Error('Unknown task run');
+    if (run.status === 'waiting_approval' || run.status === 'waiting_user') {
+      throw new Error('任务正在等待审批或用户输入；请先完成该交互再暂停');
+    }
+    if (run.status !== 'running') throw new Error('只有运行中的任务可以暂停');
     if (this.executor && this.activeRunId === targetId) await this.executor.pause();
     await taskRunStore.appendEvent(targetId, 'task.pause', { reason: 'user_command' });
     await taskRunStore.updateStatus(targetId, 'paused');
@@ -362,7 +368,30 @@ export class RunController {
     if (checkpoint?.pendingUserRequest) {
       throw new Error('Task is waiting for user input; answer the persisted question before recovery');
     }
-    if (checkpoint?.pendingWrite) {
+    if (checkpoint?.pendingWrite?.phase === 'awaiting_approval') {
+      const approved = checkpoint.approvedAction;
+      const approvalMatchesWrite = Boolean(
+        approved &&
+        approved.toolName === checkpoint.pendingWrite.toolName &&
+        approved.parameterHash === checkpoint.pendingWrite.parameterHash &&
+        approved.expiresAt >= Date.now(),
+      );
+      if (!approvalMatchesWrite) {
+        // The pending action never crossed the approval gate; it is safe to
+        // clear it without postcondition verification because the tool did not run.
+        const event = await taskRunStore.appendEvent(run.id, 'runtime.write_not_executed', {
+          toolName: checkpoint.pendingWrite.toolName,
+          parameterHash: checkpoint.pendingWrite.parameterHash,
+          reason: 'approval_not_consumed',
+        });
+        await taskRunStore.saveCheckpoint({
+          ...checkpoint,
+          sequence: event.sequence,
+          pendingWrite: undefined,
+          approvedAction: undefined,
+        });
+      }
+    } else if (checkpoint?.pendingWrite) {
       const verified = this.verifier ? await this.verifier(run, checkpoint.pendingWrite) : false;
       if (!verified) {
         await taskRunStore.appendEvent(run.id, 'runtime.recovery_needs_verification', {
