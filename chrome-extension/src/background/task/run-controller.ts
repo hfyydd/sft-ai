@@ -220,7 +220,7 @@ export class RunController {
 
   async startReplay(runId: string, historySessionId: string, task: string, tabId: number) {
     if (this.activeRunId) throw new Error('Another task is already active');
-    const run = await taskRunStore.createRun({ id: runId, sessionId: runId, goal: task, activeTabId: tabId });
+    const run = await taskRunStore.createRun({ id: runId, sessionId: historySessionId, goal: task, activeTabId: tabId });
     if (!this.factory) throw new Error('RunController executor factory is not configured');
     await this.assertRecoverableTab(tabId);
     this.activeRunId = run.id;
