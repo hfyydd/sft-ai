@@ -23,14 +23,45 @@ export class TaskRunStore {
     db.close(); return run;
   }
   async getRun(runId:string){const db=await openTaskRunDatabase();const r=await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId));db.close();return normalizeRun(r);}
-  async updateStatus(runId:string,status:TaskRunStatus,patch:Partial<TaskRun>={}):Promise<TaskRun>{
-    const db=await openTaskRunDatabase();const run=normalizeRun(await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId)));
-    if(!run){db.close();throw new Error(`Unknown task run: ${runId}`);}
-    assertTaskRunTransition(run.status, status);
-    const next={...run,...patch,status,updatedAt:Date.now()};
-    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').put(next);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
-    db.close();return next;
+  async updateStatus(runId: string, status: TaskRunStatus, patch: Partial<TaskRun> = {}): Promise<TaskRun> {
+    const db = await openTaskRunDatabase();
+    let failure: Error | undefined;
+    let next: TaskRun | undefined;
+    try {
+      return await new Promise<TaskRun>((resolve, reject) => {
+        const tx = db.transaction('runs', 'readwrite');
+        const store = tx.objectStore('runs');
+        const request = store.get(runId);
+        request.onsuccess = () => {
+          const run = normalizeRun(request.result as TaskRun | undefined);
+          if (!run) {
+            failure = new Error(`Unknown task run: ${runId}`);
+            tx.abort();
+            return;
+          }
+          try {
+            assertTaskRunTransition(run.status, status);
+          } catch (error) {
+            failure = error instanceof Error ? error : new Error(String(error));
+            tx.abort();
+            return;
+          }
+          next = { ...run, ...patch, status, updatedAt: Date.now() };
+          store.put(next);
+        };
+        request.onerror = () => {
+          failure = request.error ?? new Error('Task run read failed');
+          tx.abort();
+        };
+        tx.oncomplete = () => next ? resolve(next) : reject(failure ?? new Error('Task run was not updated'));
+        tx.onerror = () => reject(failure ?? tx.error ?? new Error('Task status update failed'));
+        tx.onabort = () => reject(failure ?? tx.error ?? new Error('Task status transition aborted'));
+      });
+    } finally {
+      db.close();
+    }
   }
+
   async appendEvent(runId:string,type:string,payload:unknown):Promise<TaskRunEvent>{
     const db=await openTaskRunDatabase();
     const event=await new Promise<TaskRunEvent>((resolve,reject)=>{
