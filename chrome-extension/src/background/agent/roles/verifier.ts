@@ -27,11 +27,6 @@ export class TaskVerifier {
       };
     }
     if (webTask) {
-      const evidenceIds = new Set(steps.flatMap(step => step.evidenceIds));
-      const persistedIds = new Set<string>();
-      // Persisted records are verified below, before an LLM can bless the plan.
-      // The async method will perform the record lookup; this placeholder keeps
-      // deterministic plan/status validation independent from provider output.
       const missing = steps.filter(step => step.status === 'completed' && step.evidenceIds.length === 0);
       if (missing.length) {
         return {
@@ -40,8 +35,6 @@ export class TaskVerifier {
           evidenceIds: [],
         };
       }
-      void evidenceIds;
-      void persistedIds;
     }
     return null;
   }
