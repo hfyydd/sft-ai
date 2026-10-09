@@ -570,6 +570,13 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
         results.push(result);
 
+        // A rejected/expired approval terminates this run rather than letting the planner
+        // reinterpret rejection as an ordinary tool failure and retry the same side effect.
+        if (result.error && /approval was not granted|not approved/i.test(result.error)) {
+          await this.context.stop();
+          return results;
+        }
+
         // check if the task is paused or stopped
         if (this.context.paused || this.context.stopped) {
           return results;
