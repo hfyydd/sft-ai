@@ -41,12 +41,14 @@ export interface PdfExtractResult {
   truncated: boolean;
   startPage: number;
   nextPageStart?: number;
+  nextPageCharOffset?: number;
 }
 
 export interface PdfExtractOptions {
   maxPages?: number;
   maxChars?: number;
   startPage?: number;
+  startCharOffset?: number;
   /** 中文 PDF 的 CID 字体需要 CMap 映射表;扩展内传 chrome.runtime.getURL('cmaps/') */
   cMapUrl?: string;
 }
@@ -107,6 +109,9 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
   let truncated = endPage < numPages;
   let extractedPages = 0;
   let lastExtractedPage = startPage - 1;
+  let nextPageStart: number | undefined;
+  let nextPageCharOffset: number | undefined;
+  const initialCharOffset = Math.max(0, options?.startCharOffset ?? 0);
 
   for (let p = startPage; p <= endPage; p++) {
     const page = await pdf.getPage(p);
@@ -115,28 +120,55 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     for (const item of content.items) {
       if ('str' in item) {
         pageText += item.str;
-        if ('hasEOL' in item && item.hasEOL) pageText += '\n';
+        if ('hasEOL' in item && item.hasEOL) pageText += '\\n';
       }
     }
     pageText = pageText.trim();
-    logger.info(`page ${p}: ${pageText.length} chars`);
-    if (pageText) text += `\n--- 第 ${p} 页 ---\n${pageText}\n`;
-    extractedPages += 1;
-    lastExtractedPage = p;
-    if (text.length >= maxChars) {
+    const charOffset = p === startPage ? Math.min(initialCharOffset, pageText.length) : 0;
+    const remainingPageText = pageText.slice(charOffset);
+    const pageHeader = (text ? '\\n' : '') + `--- 第 ${p} 页 ---\\n`;
+    const room = Math.max(0, maxChars - text.length);
+    logger.info(`page ${p}: ${pageText.length} chars, cursor ${charOffset}`);
+
+    // Don't split silently and then skip the remainder of a long page. Emit an
+    // exact character cursor when a page must be continued across model calls.
+    if (pageHeader.length + remainingPageText.length > room) {
+      if (room > pageHeader.length) {
+        const includedChars = room - pageHeader.length;
+        text += pageHeader + remainingPageText.slice(0, includedChars);
+        const nextOffset = charOffset + includedChars;
+        if (nextOffset < pageText.length) {
+          nextPageStart = p;
+          nextPageCharOffset = nextOffset;
+        } else if (p < numPages) {
+          nextPageStart = p + 1;
+          nextPageCharOffset = 0;
+        }
+      } else if (p <= numPages) {
+        nextPageStart = p;
+        nextPageCharOffset = charOffset;
+      }
       truncated = true;
       break;
     }
+
+    text += pageHeader + remainingPageText;
+    extractedPages += 1;
+    lastExtractedPage = p;
+  }
+
+  if (!nextPageStart && truncated && lastExtractedPage < numPages) {
+    nextPageStart = Math.max(startPage, lastExtractedPage + 1);
+    nextPageCharOffset = 0;
   }
 
   if (text.length > maxChars) {
-    text = text.slice(0, maxChars) + '\n…[文本过长已截断]';
+    text = text.slice(0, maxChars);
     truncated = true;
   }
 
-  const nextPageStart = truncated && lastExtractedPage < numPages ? lastExtractedPage + 1 : undefined;
   logger.info(`PDF extract done: ${text.trim().length} chars total`);
-  return { text: text.trim(), numPages, extractedPages, truncated, startPage, nextPageStart };
+  return { text: text.trim(), numPages, extractedPages, truncated, startPage, nextPageStart, nextPageCharOffset };
 }
 
 export function buildPdfPageUrl(url: string, pageNumber: number): string {
