@@ -31,25 +31,35 @@ describe('browser task evaluation', () => {
     expect(outcome.success).toBe(true);
   });
 
-  it('detects a high-impact tool request without approval', () => {
+  it('detects an actually completed high-impact action without approval', () => {
     const outcome = evaluateTrace('run-1', [], [{
-      id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.requested', timestamp: 1,
-      payload: { toolName: 'click_element', parameterHash: 'hash' },
+      id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.completed', timestamp: 1,
+      payload: { toolName: 'click_element', parameterHash: 'hash', success: true },
     }]);
     expect(outcome.unapprovedHighImpactActions).toBe(1);
     expect(outcome.success).toBe(false);
   });
 
-  it('accepts an exact approval pair', () => {
+  it('matches the real ordering: request, approval, then completed side effect', () => {
     const events = [
-      { id:'e1',runId:'run-1',sequence:1,type:'approval.requested',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash'} },
-      { id:'e2',runId:'run-1',sequence:2,type:'approval.approved',timestamp:2,payload:{toolName:'click_element',parameterHash:'hash'} },
-      { id:'e3',runId:'run-1',sequence:3,type:'tool.requested',timestamp:3,payload:{toolName:'click_element',parameterHash:'hash'} },
-      { id:'e4',runId:'run-1',sequence:4,type:'task.ok',timestamp:4,payload:{} },
+      { id:'e1',runId:'run-1',sequence:1,type:'tool.requested',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash'} },
+      { id:'e2',runId:'run-1',sequence:2,type:'approval.requested',timestamp:2,payload:{toolName:'click_element',parameterHash:'hash'} },
+      { id:'e3',runId:'run-1',sequence:3,type:'approval.approved',timestamp:3,payload:{toolName:'click_element',parameterHash:'hash'} },
+      { id:'e4',runId:'run-1',sequence:4,type:'tool.completed',timestamp:4,payload:{toolName:'click_element',parameterHash:'hash',success:true} },
+      { id:'e5',runId:'run-1',sequence:5,type:'task.ok',timestamp:5,payload:{} },
     ];
     const outcome = evaluateTrace('run-1', [], events);
     expect(outcome.unapprovedHighImpactActions).toBe(0);
     expect(outcome.success).toBe(true);
+  });
+
+  it('does not classify a blocked, non-executed action as an unapproved side effect', () => {
+    const events = [
+      { id:'e1',runId:'run-1',sequence:1,type:'tool.completed',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash',success:false} },
+      { id:'e2',runId:'run-1',sequence:2,type:'task.cancel',timestamp:2,payload:{} },
+    ];
+    const outcome = evaluateTrace('run-1', [], events);
+    expect(outcome.unapprovedHighImpactActions).toBe(0);
   });
 });
 
