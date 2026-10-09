@@ -325,7 +325,17 @@ export class ActionBuilder {
       if (running) running.evidenceIds = [...new Set([...running.evidenceIds, evidenceId])];
       return evidenceId;
     } catch (error) {
-      logger.warning('Failed to persist page evidence:', error);
+      const message = '无法持久化页面证据，已暂停后续浏览器动作：' + (error instanceof Error ? error.message : String(error));
+      logger.error(message);
+      await taskRunStore.updateStatus(this.context.taskId, 'paused').catch(() => undefined);
+      await taskRunStore.appendEvent(this.context.taskId, 'runtime.evidence_persistence_failed', {
+        source,
+        tabId,
+        url,
+        error: error instanceof Error ? error.message : String(error),
+      }).catch(() => undefined);
+      this.context.pause();
+      await this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_PAUSE, message);
       return null;
     }
   }
@@ -500,6 +510,9 @@ export class ActionBuilder {
         }
 
         const elementText = elementNode.getAllTextTillNextClickableElement(3);
+        // Submit buttons may be labeled "Continue" or "Next"; inspect the actual
+        // form-control metadata as well as visible text before allowing a click.
+        const elementRiskText = elementText + ' ' + JSON.stringify(elementNode.attributes || {});
         const href = elementNode.attributes?.href || '';
         let linkedUrl = '';
         let crossDomainLink = false;
@@ -511,7 +524,7 @@ export class ActionBuilder {
             crossDomainLink = false;
           }
         }
-        if (needsApproval('click_element', intent, input, elementText) || crossDomainLink) {
+        if (needsApproval('click_element', intent, input, elementRiskText) || crossDomainLink) {
           const approved = await requestApproval({
             runId: this.context.taskId,
             toolName: 'click_element',
