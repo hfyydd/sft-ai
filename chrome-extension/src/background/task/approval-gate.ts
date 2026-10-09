@@ -108,7 +108,13 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     activeTabId: input.tabId,
     navigatorState: current?.navigatorState,
     pendingAction: action,
-    pendingWrite: current?.pendingWrite,
+    // This exact browser write has not executed yet: the operator is blocked on
+    // approval. Do not make recovery demand a postcondition for an unexecuted action.
+    pendingWrite:
+      current?.pendingWrite?.toolName === input.toolName &&
+      current.pendingWrite.parameterHash === parameterHash
+        ? undefined
+        : current?.pendingWrite,
     approvedAction: current?.approvedAction,
   });
 
