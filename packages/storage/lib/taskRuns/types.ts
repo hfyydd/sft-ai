@@ -21,6 +21,8 @@ export interface PlanStep {
 
 export interface PendingWrite {
   toolName: string;
+  /** awaiting_approval means the action has not run; executing requires postcondition verification after restart. */
+  phase?: 'awaiting_approval' | 'executing';
   parameterHash: string;
   tabId?: number;
   url?: string;
