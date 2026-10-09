@@ -412,6 +412,67 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           throw new Error(`Action ${actionName} not exists`);
         }
 
+        // A restored one-time approval is valid only for the exact next tool,
+        // arguments and source page. Invalidate it before executing even a
+        // read-only replacement action; otherwise it could linger until reused.
+        if (this.context.approvedAction) {
+          const approved = this.context.approvedAction;
+          const parsedArgs = actionInstance.schema.schema.safeParse(actionArgs);
+          const comparableArgs = parsedArgs.success ? parsedArgs.data : actionArgs;
+          const candidateHash = await hashActionArgs(comparableArgs);
+          let currentTabId: number | undefined;
+          let currentUrl = '';
+          try {
+            const currentPage = await browserContext.getCurrentPage();
+            currentTabId = currentPage.tabId;
+            currentUrl = currentPage.url();
+          } catch {
+            // If source context cannot be observed, the approval must be invalidated.
+          }
+          let targetUrl: string | undefined;
+          if (comparableArgs && typeof comparableArgs === 'object' && 'url' in comparableArgs) {
+            targetUrl = String((comparableArgs as { url: unknown }).url);
+          } else if (
+            actionName === 'click_element' &&
+            comparableArgs && typeof comparableArgs === 'object' &&
+            'index' in comparableArgs && typeof (comparableArgs as { index: unknown }).index === 'number'
+          ) {
+            const node = browserState.selectorMap.get((comparableArgs as { index: number }).index);
+            const href = node?.attributes?.href;
+            if (href) {
+              try { targetUrl = new URL(href, currentUrl).href; } catch { targetUrl = undefined; }
+            }
+          }
+          const matches =
+            approved.toolName === actionName &&
+            approved.parameterHash === candidateHash &&
+            approved.tabId === currentTabId &&
+            (approved.url || '') === currentUrl &&
+            (approved.targetUrl || '') === (targetUrl || '');
+          if (!matches) {
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId).catch(() => undefined);
+            const invalidated = await taskRunStore.appendEvent(this.context.taskId, 'approval.invalidated', {
+              nonce: approved.nonce,
+              toolName: approved.toolName,
+              parameterHash: approved.parameterHash,
+              reason: 'next_tool_or_source_context_mismatch',
+            }).catch(() => undefined);
+            if (checkpoint && invalidated) {
+              await taskRunStore.saveCheckpoint({
+                ...checkpoint,
+                sequence: invalidated.sequence,
+                approvedAction: undefined,
+                pendingWrite:
+                  checkpoint.pendingWrite?.phase === 'awaiting_approval'
+                    ? undefined
+                    : checkpoint.pendingWrite,
+              }).catch(() => undefined);
+            }
+            if (this.context.pendingWrite?.phase === 'awaiting_approval') this.context.pendingWrite = undefined;
+            this.context.approvedAction = undefined;
+          }
+        }
+
         const indexArg = actionInstance.getIndexArg(actionArgs);
         if (i > 0 && indexArg !== null) {
           const newState = await browserContext.getState(this.context.options.useVision);
