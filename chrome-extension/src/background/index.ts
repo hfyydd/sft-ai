@@ -6,6 +6,7 @@ import {
   generalSettingsStore,
   llmProviderStore,
   analyticsSettingsStore,
+  taskRunStore,
 } from '@extension/storage';
 import { t } from '@extension/i18n';
 import BrowserContext from './browser/context';
@@ -20,7 +21,6 @@ import { analytics } from './services/analytics';
 import { getSkillsSystemInstructions } from './services/skills';
 import { extractPdfTextFromUrl } from './agent/pdf';
 import { buildToolPolicy } from './services/toolPolicy';
-import { taskRunStore } from '@extension/storage';
 import { runController } from './task/run-controller';
 import { resolveApproval } from './task/approval-gate';
 import { resolveLocalPdfBytes } from './task/local-file-gate';
