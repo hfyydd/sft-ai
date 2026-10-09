@@ -67,6 +67,24 @@ export async function resolveLocalPdfBytes(input: {
   const request = checkpoint?.pendingFileRead;
   if (!request || request.runId !== input.runId || request.requestId !== input.requestId || request.expiresAt < Date.now()) return false;
 
+  const tab = await chrome.tabs.get(request.tabId).catch(() => null);
+  if (!tab?.id || tab.url !== request.path) {
+    const reason = '本地 PDF 标签页已关闭或地址已改变，拒绝接受过期文件读取结果';
+    const waiter = pending.get(input.requestId);
+    if (waiter) {
+      pending.delete(input.requestId);
+      waiter.reject(new Error(reason));
+    }
+    const invalidated = await taskRunStore.appendEvent(input.runId, 'file.read_invalidated', {
+      requestId: input.requestId,
+      tabId: request.tabId,
+      reason,
+    }).catch(() => undefined);
+    if (invalidated) await taskRunStore.saveCheckpoint({ ...checkpoint!, sequence: invalidated.sequence, pendingFileRead: undefined }).catch(() => undefined);
+    await taskRunStore.updateStatus(input.runId, 'failed').catch(() => undefined);
+    return false;
+  }
+
   if (input.error) {
     const waiter = pending.get(input.requestId);
     if (waiter) {
