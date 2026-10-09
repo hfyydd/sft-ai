@@ -1,4 +1,5 @@
 import { taskRunStore, type PendingAction, type PendingWrite, type TaskCheckpoint } from '@extension/storage';
+import { approvalMatchesContext } from './approval-policy';
 
 interface ApprovalRequest {
   runId: string;
@@ -40,13 +41,19 @@ async function hash(value: string) {
 }
 
 async function actionMatches(action: PendingAction, input: ApprovalRequest) {
-  if (action.runId !== input.runId || action.toolName !== input.toolName) return false;
   const parameterHash = await hash(JSON.stringify(input.args));
-  if (action.parameterHash !== parameterHash || (action.expiresAt && action.expiresAt < Date.now())) return false;
-  if (action.tabId !== input.tabId) return false;
-  if ((action.url || '') !== (input.url || '')) return false;
-  if ((action.targetUrl || '') !== (input.targetUrl || '')) return false;
-  return true;
+  return approvalMatchesContext(
+    action,
+    {
+      runId: input.runId,
+      toolName: input.toolName,
+      parameterHash,
+      tabId: input.tabId,
+      url: input.url,
+      targetUrl: input.targetUrl,
+      expiresAt: action.expiresAt,
+    },
+  );
 }
 
 async function clearPending(
