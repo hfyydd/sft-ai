@@ -19,3 +19,29 @@ export function requiresApproval(toolName: string, args: unknown, elementText = 
   const risk = classifyActionRisk(toolName, args, elementText);
   return risk === 'write' || risk === 'destructive' || risk === 'financial';
 }
+
+export interface ApprovalContext {
+  runId: string;
+  toolName: string;
+  parameterHash: string;
+  tabId?: number;
+  url?: string;
+  targetUrl?: string;
+  expiresAt: number;
+}
+
+export function approvalMatchesContext(
+  approved: ApprovalContext,
+  candidate: ApprovalContext,
+  now = Date.now(),
+): boolean {
+  return (
+    approved.runId === candidate.runId &&
+    approved.toolName === candidate.toolName &&
+    approved.parameterHash === candidate.parameterHash &&
+    approved.tabId === candidate.tabId &&
+    (approved.url || '') === (candidate.url || '') &&
+    (approved.targetUrl || '') === (candidate.targetUrl || '') &&
+    approved.expiresAt >= now
+  );
+}
