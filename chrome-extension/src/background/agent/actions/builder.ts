@@ -819,7 +819,7 @@ export class ActionBuilder {
           }
           if (pdfResult.text) {
             const cursorMsg = pdfResult.nextPageStart
-              ? `，如需继续读取请将 pageStart=${pdfResult.nextPageStart} 作为下一次 read_page 的起始页`
+              ? `，如需继续读取请将 pageStart=${pdfResult.nextPageStart}, pageCharOffset=${pdfResult.nextPageCharOffset ?? 0} 作为下一次 read_page 的起始页和字符游标`
               : '';
             const okMsg = `已解析 PDF 文本(共 ${pdfResult.numPages} 页,提取 ${pdfResult.extractedPages} 页${pdfResult.truncated ? ',内容已截断' : ''})${cursorMsg}`;
             const pdfEvidenceIds = await this.persistPdfEvidence(page.tabId, tabUrl, tabInfo.title || '', pdfResult.text, pdfResult.startPage);
