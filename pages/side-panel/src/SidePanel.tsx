@@ -46,10 +46,10 @@ const SidePanel = () => {
     runIdRef.current = runId;
     lastRunSequenceRef.current = 0;
     portRef.current?.postMessage({ type: 'get_run_snapshot', runId, afterSequence: 0 });
-    portRef.current?.postMessage({ type: 'subscribe_run', runId, afterSequence: 0 });
     portRef.current?.postMessage({ type: 'get_run_evidence', runId, limit: 200 });
   }, []);
   const [timelineHasMore, setTimelineHasMore] = useState(false);
+  const taskStartPendingRef = useRef(false);
   const [manualSkills, setManualSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
@@ -450,9 +450,16 @@ const SidePanel = () => {
             }
           }
           handleTaskState(message);
+        } else if (message && message.type === 'run_started') {
+          if (message.runId && message.runId === runIdRef.current) {
+            taskStartPendingRef.current = false;
+            requestRunSnapshot(message.runId);
+          }
         } else if (message && message.type === 'run_snapshot') {
+          if (message.snapshot?.run?.id && message.snapshot.run.id !== runIdRef.current) return;
           setRunSnapshot(message.snapshot);
           setSelectedSkillIds(message.snapshot?.run?.skillIds ?? []);
+          taskStartPendingRef.current = false;
           if (['completed','failed','cancelled'].includes(message.snapshot?.run?.status)) {
             setApprovalAction(null);
             setUserRequest(null);
@@ -460,6 +467,15 @@ const SidePanel = () => {
           const snapshotEvents = message.snapshot?.events || [];
           lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
           setTimelineHasMore(snapshotEvents.length > 0 && snapshotEvents[0].sequence > 1);
+          if (message.snapshot?.run?.id) {
+            // Snapshot first, then subscribe from its sequence. This closes the
+            // race where early live events arrive before the snapshot exists.
+            portRef.current?.postMessage({
+              type: 'subscribe_run',
+              runId: message.snapshot.run.id,
+              afterSequence: lastRunSequenceRef.current,
+            });
+          }
           if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
           if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
           const pendingFile = message.snapshot?.checkpoint?.pendingFileRead;
@@ -536,7 +552,7 @@ const SidePanel = () => {
         }
       });
 
-      if (runIdRef.current) {
+      if (runIdRef.current && !taskStartPendingRef.current) {
         requestRunSnapshot(runIdRef.current);
       } else if (sessionIdRef.current) {
         void chrome.runtime.sendMessage({ type: 'get_latest_run_for_session', sessionId: sessionIdRef.current }, response => {
@@ -672,6 +688,8 @@ const SidePanel = () => {
       // Reset follow-up mode and historical session flags
       setIsFollowUpMode(false);
       setIsHistoricalSession(false);
+
+      taskStartPendingRef.current = !useFollowUp;
 
       const userMessage = {
         actor: Actors.USER,
