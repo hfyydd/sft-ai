@@ -699,7 +699,7 @@ const SidePanel = () => {
       setIsFollowUpMode(false);
       setIsHistoricalSession(false);
 
-      taskStartPendingRef.current = !useFollowUp;
+      taskStartPendingRef.current = !isFollowUpMode;
 
       const userMessage = {
         actor: Actors.USER,
