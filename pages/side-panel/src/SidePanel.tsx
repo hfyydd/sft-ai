@@ -584,6 +584,24 @@ const SidePanel = () => {
     return () => stopConnection();
   }, [setupConnection, stopConnection]);
 
+  // Reopen the most recent non-terminal task automatically after the Side Panel remounts.
+  useEffect(() => {
+    setupConnection();
+    if (runIdRef.current || sessionIdRef.current) return;
+    chrome.runtime.sendMessage({ type: 'get_latest_active_run' }, (response: { ok?: boolean; run?: any } | undefined) => {
+      const run = response?.run;
+      if (!response?.ok || !run?.id || runIdRef.current || sessionIdRef.current) return;
+      sessionIdRef.current = run.sessionId;
+      setCurrentSessionId(run.sessionId);
+      runIdRef.current = run.id;
+      setIsHistoricalSession(false);
+      void chatHistoryStore.getSession(run.sessionId).then(session => {
+        if (session) setMessages(session.messages);
+      });
+      requestRunSnapshot(run.id);
+    });
+  }, [setupConnection, requestRunSnapshot]);
+
   // Handle replay command
   const handleReplay = async (historySessionId: string): Promise<void> => {
     try {
