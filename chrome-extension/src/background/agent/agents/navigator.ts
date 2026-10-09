@@ -515,7 +515,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
                   ? String(actionArgs.url)
                   : undefined,
             startedAt: Date.now(),
-            phase: 'executing',
+            phase: 'executing' as const,
           };
           if (actionArgs && typeof actionArgs === 'object' && 'index' in actionArgs && typeof actionArgs.index === 'number') {
             pendingWrite.index = actionArgs.index;
@@ -564,7 +564,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             index: indexArg ?? undefined,
             expectedValueHash: expectedValue ? await hashActionArgs(expectedValue) : undefined,
             beforeObservationSignature,
-            phase: 'executing',
+            phase: 'executing' as const,
           };
           this.context.pendingWrite = pendingWrite;
           const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
