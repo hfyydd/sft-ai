@@ -1,4 +1,5 @@
 import { openTaskRunDatabase } from './database';
+import { assertTaskRunTransition } from './state';
 import type { EvidenceRecord, TaskCheckpoint, TaskRun, TaskRunEvent, TaskRunSnapshot, TaskRunStatus } from './types';
 
 const reqValue = <T>(r: IDBRequest<T>) => new Promise<T>((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
@@ -25,6 +26,7 @@ export class TaskRunStore {
   async updateStatus(runId:string,status:TaskRunStatus,patch:Partial<TaskRun>={}):Promise<TaskRun>{
     const db=await openTaskRunDatabase();const run=normalizeRun(await reqValue<TaskRun|undefined>(db.transaction('runs').objectStore('runs').get(runId)));
     if(!run){db.close();throw new Error(`Unknown task run: ${runId}`);}
+    assertTaskRunTransition(run.status, status);
     const next={...run,...patch,status,updatedAt:Date.now()};
     await new Promise<void>((resolve,reject)=>{const tx=db.transaction('runs','readwrite');tx.objectStore('runs').put(next);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
     db.close();return next;
