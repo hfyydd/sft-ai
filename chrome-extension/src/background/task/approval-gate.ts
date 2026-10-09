@@ -67,20 +67,37 @@ async function clearPending(
 
 export async function requestApproval(input: ApprovalRequest): Promise<boolean> {
   const parameterHash = await hash(JSON.stringify(input.args));
-  const existing = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
-  if (existing?.approvedAction && await actionMatches(existing.approvedAction, input)) {
-    const consumed = await taskRunStore.appendEvent(input.runId, 'approval.consumed', {
+  let existing = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
+  if (existing?.approvedAction) {
+    if (await actionMatches(existing.approvedAction, input)) {
+      const consumed = await taskRunStore.appendEvent(input.runId, 'approval.consumed', {
+        nonce: existing.approvedAction.nonce,
+        toolName: existing.approvedAction.toolName,
+        parameterHash,
+      });
+      await clearPending(input.runId, consumed.sequence, existing, {
+        pendingAction: undefined,
+        approvedAction: undefined,
+        pendingWrite: existing.pendingWrite,
+      });
+      await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
+      return true;
+    }
+
+    // A recovered approval must never survive a different next action. Otherwise
+    // a later model retry could accidentally consume an old authorization.
+    const invalidated = await taskRunStore.appendEvent(input.runId, 'approval.invalidated', {
       nonce: existing.approvedAction.nonce,
       toolName: existing.approvedAction.toolName,
-      parameterHash,
+      parameterHash: existing.approvedAction.parameterHash,
+      reason: existing.approvedAction.expiresAt < Date.now() ? 'expired' : 'action_or_context_mismatch',
     });
-    await clearPending(input.runId, consumed.sequence, existing, {
-      pendingAction: undefined,
+    await clearPending(input.runId, invalidated.sequence, existing, {
+      pendingAction: existing.pendingAction,
       approvedAction: undefined,
       pendingWrite: existing.pendingWrite,
     });
-    await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
-    return true;
+    existing = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
   }
 
   const nonce = crypto.randomUUID();
