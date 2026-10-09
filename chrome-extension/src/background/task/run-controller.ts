@@ -32,12 +32,66 @@ export class RunController {
   async initialize() {
     const active = await taskRunStore.listActiveRuns();
     for (const run of active) {
-      if (run.status === 'running' || run.status === 'queued') {
+      let checkpoint = await taskRunStore.getCheckpoint(run.id);
+      if (!checkpoint) {
+        if (run.status === 'running' || run.status === 'queued' || run.status === 'waiting_approval' || run.status === 'waiting_user') {
+          await taskRunStore.updateStatus(run.id, 'interrupted');
+          await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+            reason: 'service_worker_restart_without_checkpoint',
+          });
+        }
+        continue;
+      }
+
+      let reason: string | undefined;
+      const now = Date.now();
+      if (checkpoint.pendingAction && checkpoint.pendingAction.expiresAt < now) {
+        reason = 'approval_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'approval.expired', {
+          nonce: checkpoint.pendingAction.nonce,
+          reason,
+        });
+        checkpoint = {
+          ...checkpoint,
+          sequence: event.sequence,
+          pendingAction: undefined,
+          approvedAction: undefined,
+          pendingWrite: checkpoint.pendingWrite?.phase === 'awaiting_approval' ? undefined : checkpoint.pendingWrite,
+        };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      } else if (checkpoint.pendingUserRequest && checkpoint.pendingUserRequest.expiresAt < now) {
+        reason = 'user_request_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'user.request_expired', {
+          nonce: checkpoint.pendingUserRequest.nonce,
+          reason,
+        });
+        checkpoint = { ...checkpoint, sequence: event.sequence, pendingUserRequest: undefined };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      } else if (checkpoint.pendingFileRead && checkpoint.pendingFileRead.expiresAt < now) {
+        reason = 'local_file_read_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'file.read_expired', {
+          requestId: checkpoint.pendingFileRead.requestId,
+          reason,
+        });
+        checkpoint = { ...checkpoint, sequence: event.sequence, pendingFileRead: undefined };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      }
+
+      if (run.status === 'running' || run.status === 'queued' || reason) {
         await taskRunStore.updateStatus(run.id, 'interrupted');
-        await taskRunStore.appendEvent(run.id, 'runtime.interrupted', { reason: 'service_worker_restart' });
-      } else if (run.status === 'waiting_approval') {
+        await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+          reason: reason ?? 'service_worker_restart',
+        });
+      } else if (run.status === 'waiting_approval' && checkpoint.pendingAction) {
         await taskRunStore.updateStatus(run.id, 'waiting_user');
-        await taskRunStore.appendEvent(run.id, 'approval.recovery_required', { reason: 'service_worker_restart' });
+        await taskRunStore.appendEvent(run.id, 'approval.recovery_required', {
+          reason: 'service_worker_restart',
+        });
+      } else if (run.status === 'waiting_user' && !checkpoint.pendingUserRequest && !checkpoint.pendingFileRead) {
+        await taskRunStore.updateStatus(run.id, 'interrupted');
+        await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+          reason: 'waiting_user_gate_not_recoverable',
+        });
       }
     }
   }
