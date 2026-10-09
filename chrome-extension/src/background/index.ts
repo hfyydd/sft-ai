@@ -67,7 +67,7 @@ runController.configure(
   async run => {
     if (run.activeTabId === undefined) throw new Error('Task has no target tab');
     await browserContext.switchTab(run.activeTabId);
-    return setupExecutor(run.id, run.goal, browserContext, run.skillIds);
+    return setupExecutor(run.id, run.goal, browserContext, run.skillIds, run.sessionId);
   },
   async (_run, pendingWrite) => {
     if (pendingWrite.tabId === undefined) return false;
@@ -251,7 +251,7 @@ chrome.runtime.onConnect.addListener(port => {
               parentRunId: message.parentRunId,
               createExecutor: async taskRun => {
                 await browserContext.switchTab(message.tabId);
-                return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || []);
+                return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || [], taskRun.sessionId);
               },
             });
             currentExecutor = runController.getExecutor();
@@ -531,7 +531,7 @@ chrome.runtime.onConnect.addListener(port => {
   }
 });
 
-async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext, skillIds: string[] = []) {
+async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext, skillIds: string[] = [], historySessionId: string = taskId) {
   const providers = await llmProviderStore.getAllProviders();
   // if no providers, need to display the options page
   if (Object.keys(providers).length === 0) {
@@ -591,6 +591,7 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
   const executor = new Executor(task, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
     skillsInstructions: await getSkillsSystemInstructions(skillIds),
+    historySessionId,
     agentOptions: {
       maxSteps: generalSettings.maxSteps,
       maxFailures: generalSettings.maxFailures,
