@@ -2,6 +2,11 @@ import { taskRunStore, type PendingFileReadRequest } from '@extension/storage';
 import { decodeBase64ToBytes, MAX_PDF_BYTES } from '../agent/pdf';
 
 const pending = new Map<string, { resolve: (bytes: Uint8Array) => void; reject: (error: Error) => void }>();
+// Non-persistent, one-time handoff for a file response that arrived after the MV3
+// worker restarted. The new Executor consumes these bytes without asking Side Panel
+// to reread the same file immediately.
+const availableBytes = new Map<string, { path: string; expiresAt: number; bytes: Uint8Array }>();
+const cacheKey = (runId: string, path: string) => runId + ':' + path;
 
 export async function requestLocalPdfBytes(input: {
   runId: string;
@@ -10,6 +15,13 @@ export async function requestLocalPdfBytes(input: {
   timeoutMs?: number;
 }): Promise<Uint8Array> {
   if (!input.path.startsWith('file://')) throw new Error('本地文件通道只允许 file:// PDF');
+  const cachedKey = cacheKey(input.runId, input.path);
+  const cached = availableBytes.get(cachedKey);
+  if (cached && cached.expiresAt >= Date.now()) {
+    availableBytes.delete(cachedKey);
+    return new Uint8Array(cached.bytes);
+  }
+  if (cached) availableBytes.delete(cachedKey);
   const request: PendingFileReadRequest = {
     runId: input.runId,
     requestId: crypto.randomUUID(),
@@ -129,6 +141,14 @@ export async function resolveLocalPdfBytes(input: {
   if (waiter) {
     pending.delete(input.requestId);
     waiter.resolve(bytes);
+  } else {
+    // A service-worker restart destroyed the Promise which initiated the read.
+    // Keep the result in memory for the immediately restarted Executor only.
+    availableBytes.set(cacheKey(input.runId, request.path), {
+      path: request.path,
+      expiresAt: Math.min(request.expiresAt, Date.now() + 60_000),
+      bytes: new Uint8Array(bytes),
+    });
   }
   return true;
 }
