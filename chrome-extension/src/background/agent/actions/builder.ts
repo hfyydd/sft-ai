@@ -34,7 +34,7 @@ import { ExecutionState, Actors } from '../event/types';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
-import { extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
+import { buildPdfPageUrl, extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
 import { requestApproval } from '../../task/approval-gate';
 import { requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 import { taskRunStore } from '@extension/storage';
@@ -250,10 +250,9 @@ export class ActionBuilder {
     try {
       for (let offset = 0; offset < count; offset++) {
         const pageNumber = start + offset;
-        const target = new URL(baseUrl);
-        target.hash = 'page=' + pageNumber;
-        this.context.browserContext.assertUrlAllowed(target.href);
-        await chrome.tabs.update(tabId, { active: true, url: target.href });
+        const targetUrl = buildPdfPageUrl(baseUrl, pageNumber);
+        this.context.browserContext.assertUrlAllowed(targetUrl);
+        await chrome.tabs.update(tabId, { active: true, url: targetUrl });
         // Chrome's built-in PDF viewer processes #page=N asynchronously.
         await new Promise<void>(resolve => setTimeout(resolve, 600));
 
@@ -262,7 +261,7 @@ export class ActionBuilder {
         this.context.browserContext.assertUrlAllowed(currentTab.url);
 
         const actualUrl = new URL(currentTab.url);
-        if (actualUrl.hash !== target.hash) {
+        if (actualUrl.hash !== new URL(targetUrl).hash) {
           throw new Error('PDF 查看器未确认跳转到第 ' + pageNumber + ' 页，已停止以避免错标页码');
         }
 
