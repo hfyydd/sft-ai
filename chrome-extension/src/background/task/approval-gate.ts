@@ -213,7 +213,6 @@ export async function resolveApproval(input: {
   }
 
   const resolve = pending.get(input.nonce);
-  const liveExecutorWaiter = Boolean(resolve);
   if (resolve) pending.delete(input.nonce);
   const event = await taskRunStore.appendEvent(
     input.runId,
