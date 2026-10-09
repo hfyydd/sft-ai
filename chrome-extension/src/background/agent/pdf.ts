@@ -160,9 +160,13 @@ async function readResponseBytesBounded(response: Response, maxBytes: number): P
   const chunks: Uint8Array[] = [];
   let total = 0;
   try {
-    while (true) {
+    let reachedEnd = false;
+    while (!reachedEnd) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) {
+        reachedEnd = true;
+        continue;
+      }
       total += value.byteLength;
       if (total > maxBytes) {
         await reader.cancel('PDF exceeds configured byte limit').catch(() => undefined);
