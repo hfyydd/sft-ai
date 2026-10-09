@@ -423,11 +423,20 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           let currentTabId: number | undefined;
           let currentUrl = '';
           try {
-            const currentPage = await browserContext.getCurrentPage();
-            currentTabId = currentPage.tabId;
-            currentUrl = currentPage.url();
+            if (
+              actionName === 'close_tab' &&
+              comparableArgs && typeof comparableArgs === 'object' &&
+              'tab_id' in comparableArgs && typeof (comparableArgs as { tab_id: unknown }).tab_id === 'number'
+            ) {
+              currentTabId = Number((comparableArgs as { tab_id: number }).tab_id);
+              currentUrl = (await chrome.tabs.get(currentTabId)).url || '';
+            } else {
+              const currentPage = await browserContext.getCurrentPage();
+              currentTabId = currentPage.tabId;
+              currentUrl = currentPage.url();
+            }
           } catch {
-            // If source context cannot be observed, the approval must be invalidated.
+            // If source/target context cannot be observed, the approval must be invalidated.
           }
           let targetUrl: string | undefined;
           if (comparableArgs && typeof comparableArgs === 'object' && 'url' in comparableArgs) {
