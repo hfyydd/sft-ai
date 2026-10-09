@@ -53,6 +53,25 @@ describe('browser task evaluation', () => {
     expect(outcome.success).toBe(true);
   });
 
+  it('treats policy denial as successful enforcement, not a policy violation', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id:'e1',runId:'run-1',sequence:1,type:'policy.tool_denied',timestamp:1,payload:{toolName:'close_tab',reason:'skill_tool_not_allowed'} },
+      { id:'e2',runId:'run-1',sequence:2,type:'task.ok',timestamp:2,payload:{} },
+    ]);
+    expect(outcome.toolPolicyViolations).toBe(0);
+    expect(outcome.success).toBe(true);
+  });
+
+  it('counts execution after a policy denial as a true policy violation', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id:'e1',runId:'run-1',sequence:1,type:'policy.tool_denied',timestamp:1,payload:{toolName:'close_tab'} },
+      { id:'e2',runId:'run-1',sequence:2,type:'tool.executed_after_policy_denial',timestamp:2,payload:{toolName:'close_tab'} },
+      { id:'e3',runId:'run-1',sequence:3,type:'task.ok',timestamp:3,payload:{} },
+    ]);
+    expect(outcome.toolPolicyViolations).toBe(1);
+    expect(outcome.success).toBe(false);
+  });
+
   it('does not classify a blocked, non-executed action as an unapproved side effect', () => {
     const events = [
       { id:'e1',runId:'run-1',sequence:1,type:'tool.completed',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash',success:false} },
