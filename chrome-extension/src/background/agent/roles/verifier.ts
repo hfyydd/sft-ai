@@ -27,6 +27,11 @@ export class TaskVerifier {
       };
     }
     if (webTask) {
+      const evidenceIds = new Set(steps.flatMap(step => step.evidenceIds));
+      const persistedIds = new Set<string>();
+      // Persisted records are verified below, before an LLM can bless the plan.
+      // The async method will perform the record lookup; this placeholder keeps
+      // deterministic plan/status validation independent from provider output.
       const missing = steps.filter(step => step.status === 'completed' && step.evidenceIds.length === 0);
       if (missing.length) {
         return {
@@ -35,6 +40,8 @@ export class TaskVerifier {
           evidenceIds: [],
         };
       }
+      void evidenceIds;
+      void persistedIds;
     }
     return null;
   }
@@ -42,6 +49,20 @@ export class TaskVerifier {
   async verify(goal: string, steps: PlanStep[], evidence: EvidenceRecord[], webTask: boolean): Promise<VerificationResult> {
     const deterministic = this.deterministic(steps, webTask);
     if (deterministic) return deterministic;
+
+    const persistedEvidenceIds = new Set(evidence.map(item => item.id));
+    if (webTask) {
+      const invalidReferences = steps.flatMap(step =>
+        step.evidenceIds.filter(evidenceId => !persistedEvidenceIds.has(evidenceId)).map(evidenceId => ({ stepId: step.id, evidenceId })),
+      );
+      if (invalidReferences.length) {
+        return {
+          passed: false,
+          reason: '计划引用了不存在的持久证据：' + invalidReferences.map(item => item.stepId + '→' + item.evidenceId).join(', '),
+          evidenceIds: [],
+        };
+      }
+    }
 
     const evidenceText = evidence.slice(-30).map(e =>
       '[evidenceId=' + e.id + '] source=' + e.source + ' page=' + (e.pageNumber ?? '-') +
