@@ -1182,7 +1182,7 @@ const SidePanel = () => {
           {!showHistory && runSnapshot?.run && (
             <div className="mr-2 flex items-center gap-1 text-[11px] text-zinc-500">
               <span>{runSnapshot.run.status}</span>
-              {['running', 'waiting_user', 'waiting_approval'].includes(runSnapshot.run.status) && (
+              {runSnapshot.run.status === 'running' && (
                 <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'pause_task', taskId: runSnapshot.run.id })}>
                   {t('task_pause')}
                 </button>
