@@ -75,10 +75,15 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
         toolName: existing.approvedAction.toolName,
         parameterHash,
       });
+      const pendingWrite =
+        existing.pendingWrite?.toolName === input.toolName &&
+        existing.pendingWrite.parameterHash === parameterHash
+          ? { ...existing.pendingWrite, phase: 'executing' as const }
+          : existing.pendingWrite;
       await clearPending(input.runId, consumed.sequence, existing, {
         pendingAction: undefined,
         approvedAction: undefined,
-        pendingWrite: existing.pendingWrite,
+        pendingWrite,
       });
       await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
       return true;
@@ -131,7 +136,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     pendingWrite:
       current?.pendingWrite?.toolName === input.toolName &&
       current.pendingWrite.parameterHash === parameterHash
-        ? undefined
+        ? { ...current.pendingWrite, phase: 'awaiting_approval' }
         : current?.pendingWrite,
     approvedAction: current?.approvedAction,
   });
@@ -155,6 +160,28 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
 
   if (!approved) return false;
 
+  // Commit the approval consumption and set the write phase back to executing
+  // before returning to the tool handler, so a Worker crash cannot erase the
+  // distinction between "approved but not run" and "side effect may have run".
+  const checkpoint = await taskRunStore.getCheckpoint(input.runId);
+  const approvedAction = checkpoint?.approvedAction;
+  if (!checkpoint || !approvedAction || !(await actionMatches(approvedAction, input))) return false;
+  const consumed = await taskRunStore.appendEvent(input.runId, 'approval.consumed', {
+    nonce: approvedAction.nonce,
+    toolName: approvedAction.toolName,
+    parameterHash,
+  });
+  const pendingWrite =
+    checkpoint.pendingWrite?.toolName === input.toolName &&
+    checkpoint.pendingWrite.parameterHash === parameterHash
+      ? { ...checkpoint.pendingWrite, phase: 'executing' as const }
+      : checkpoint.pendingWrite;
+  await clearPending(input.runId, consumed.sequence, checkpoint, {
+    pendingAction: undefined,
+    approvedAction: undefined,
+    pendingWrite,
+  });
+  await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
   return true;
 }
 
@@ -197,7 +224,8 @@ export async function resolveApproval(input: {
   if (input.approved) {
     await clearPending(input.runId, event.sequence, checkpoint, {
       pendingAction: undefined,
-      approvedAction: liveExecutorWaiter ? undefined : action,
+      // Keep the one-time approval in IndexedDB until the waiting tool consumes it.
+      approvedAction: action,
       pendingWrite: checkpoint.pendingWrite,
     });
     await taskRunStore.updateStatus(input.runId, 'running');
@@ -206,7 +234,7 @@ export async function resolveApproval(input: {
     await clearPending(input.runId, event.sequence, checkpoint, {
       pendingAction: undefined,
       approvedAction: undefined,
-      pendingWrite: checkpoint.pendingWrite,
+      pendingWrite: undefined,
     });
     await taskRunStore.updateStatus(input.runId, 'cancelled');
     resolve?.(false);
