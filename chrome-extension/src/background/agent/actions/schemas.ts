@@ -125,6 +125,7 @@ export const readPageActionSchema: ActionSchema = {
     intent: z.string().default('').describe('这个动作的目的,必须用简体中文书写'),
     maxLength: z.number().int().min(500).max(30000).default(6000).describe('maximum characters of text to return'),
     pageStart: z.number().int().min(1).optional().describe('PDF first page to read, 1-based'),
+    pageCharOffset: z.number().int().min(0).optional().describe('character offset when continuing inside a long PDF page'),
     pageCount: z.number().int().min(1).max(20).optional().describe('PDF pages to read in this call'),
   }),
 };
