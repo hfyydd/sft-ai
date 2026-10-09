@@ -176,6 +176,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'get_latest_active_run') {
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
     taskRunStore.listActiveRuns()
       .then(runs => sendResponse({ ok: true, run: runs.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null }))
       .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
@@ -183,6 +184,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'get_latest_run_for_session' && typeof msg.sessionId === 'string') {
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
     taskRunStore.listBySession(msg.sessionId)
       .then(runs => sendResponse({ ok: true, run: runs.sort((a,b) => b.updatedAt - a.updatedAt)[0] }))
       .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
@@ -190,6 +192,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 
   if (msg?.type === 'debug_pdf_extract' && msg.url) {
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
     extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
       .then(r =>
         sendResponse({
