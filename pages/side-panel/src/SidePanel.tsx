@@ -58,6 +58,8 @@ const SidePanel = () => {
   const isReplayingRef = useRef<boolean>(false);
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
+  const setupConnectionRef = useRef<(() => void) | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastRunSequenceRef = useRef(0);
 
@@ -526,6 +528,12 @@ const SidePanel = () => {
         }
         setInputEnabled(true);
         setShowStopButton(false);
+        if (!document.hidden && reconnectTimerRef.current === null) {
+          reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!portRef.current) setupConnectionRef.current?.();
+          }, 700);
+        }
       });
 
       if (runIdRef.current) {
@@ -587,6 +595,11 @@ const SidePanel = () => {
     setupConnection();
     return () => stopConnection();
   }, [setupConnection, stopConnection]);
+
+  useEffect(() => {
+    setupConnectionRef.current = setupConnection;
+    return () => { setupConnectionRef.current = null; };
+  }, [setupConnection]);
 
   // Reopen the most recent non-terminal task automatically after the Side Panel remounts.
   useEffect(() => {
@@ -962,6 +975,11 @@ const SidePanel = () => {
         recordingTimerRef.current = null;
       }
       stopConnection();
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      setupConnectionRef.current = null;
     };
   }, [stopConnection]);
 
