@@ -811,10 +811,11 @@ export class ActionBuilder {
               cMapUrl:chrome.runtime.getURL('cmaps/'),
               maxPages:input.pageCount??20,
               maxChars:Math.min(input.maxLength??6000,30000),
-              startPage:input.pageStart??1
+              startPage:input.pageStart??1,
+              startCharOffset:input.pageCharOffset??0
             });
           } else {
-            pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxPages: input.pageCount ?? 20, maxChars: Math.min(input.maxLength ?? 6000, 30000), startPage: input.pageStart ?? 1 });
+            pdfResult = await extractPdfTextFromUrl(tabUrl, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxPages: input.pageCount ?? 20, maxChars: Math.min(input.maxLength ?? 6000, 30000), startPage: input.pageStart ?? 1, startCharOffset: input.pageCharOffset ?? 0 });
           }
           if (pdfResult.text) {
             const cursorMsg = pdfResult.nextPageStart
