@@ -39,8 +39,10 @@ export interface ExecutorExtraArgs {
   extractorLLM?: BaseChatModel;
   agentOptions?: Partial<AgentOptions>;
   generalSettings?: GeneralSettingsConfig;
-  /** System-prompt fragment built from enabled 'always' skills; appended to planner & navigator prompts. */
+  /** System-prompt fragment built from enabled and selected skills. */
   skillsInstructions?: string;
+  /** Chat session ID used for replay history; taskId remains the durable run ID. */
+  historySessionId?: string;
   toolPolicy?: ToolPolicy;
 }
 
@@ -51,6 +53,7 @@ export class Executor {
   private readonly plannerPrompt: PlannerPrompt;
   private readonly navigatorPrompt: NavigatorPrompt;
   private readonly generalSettings: GeneralSettingsConfig | undefined;
+  private readonly historySessionId: string;
   private readonly taskVerifier: TaskVerifier;
   private tasks: string[] = [];
   constructor(
@@ -75,6 +78,7 @@ export class Executor {
     );
 
     this.generalSettings = extraArgs?.generalSettings;
+    this.historySessionId = extraArgs?.historySessionId ?? taskId;
     this.taskVerifier = new TaskVerifier(plannerLLM);
     this.tasks.push(task);
     const skillsInstructions = extraArgs?.skillsInstructions?.trim() ?? '';
@@ -329,7 +333,7 @@ export class Executor {
       if (this.generalSettings?.replayHistoricalTasks) {
         const historyString = JSON.stringify(this.context.history);
         logger.info(`Executor history size: ${historyString.length}`);
-        await chatHistoryStore.storeAgentStepHistory(this.context.taskId, this.tasks[0], historyString);
+        await chatHistoryStore.storeAgentStepHistory(this.historySessionId, this.tasks[0], historyString);
       } else {
         logger.info('Replay historical tasks is disabled, skipping history storage');
       }
