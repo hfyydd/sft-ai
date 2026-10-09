@@ -577,13 +577,17 @@ export class ActionBuilder {
     const closeTab = new Action(async (input: z.infer<typeof closeTabActionSchema.schema>) => {
       const intent = input.intent || t('act_closeTab_start', [input.tab_id.toString()]);
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
-      const pageForApproval = await this.context.browserContext.getCurrentPage();
+      const targetTab = await chrome.tabs.get(input.tab_id).catch(() => null);
+      if (!targetTab?.id || !targetTab.url) {
+        return new ActionResult({ error: '待关闭的标签页不存在或无法识别', includeInMemory: true });
+      }
       const approved = await requestApproval({
         runId: this.context.taskId,
         toolName: 'close_tab',
         args: input,
-        tabId: pageForApproval.tabId,
-        url: pageForApproval.url(),
+        // Bind confirmation to the actual tab being closed, not whichever tab is active.
+        tabId: targetTab.id,
+        url: targetTab.url,
         reason: intent,
       });
       if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
