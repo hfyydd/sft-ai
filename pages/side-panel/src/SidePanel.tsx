@@ -87,7 +87,11 @@ const SidePanel = () => {
         }
         resolve(xhr.response);
       };
+      xhr.onprogress = event => {
+        if (event.loaded > 10 * 1024 * 1024) xhr.abort();
+      };
       xhr.onerror = () => reject(new Error('读取失败(可能未开启文件访问权限)'));
+      xhr.onabort = () => reject(new Error('本地 PDF 超过 10MB 限制'));
       xhr.ontimeout = () => reject(new Error('本地 PDF 读取超时'));
       xhr.send();
     });
