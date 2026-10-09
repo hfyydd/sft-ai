@@ -119,6 +119,27 @@ export class Executor {
   }
 
   getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
+  async switchToSafeActiveTabAfterClose(closedTabId: number): Promise<number | undefined> {
+    const [activeTabs, allTabs] = await Promise.all([
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []),
+      chrome.tabs.query({ lastFocusedWindow: true }).catch(() => []),
+    ]);
+    const ordered = [
+      ...activeTabs,
+      ...allTabs.filter(tab => !activeTabs.some(active => active.id === tab.id)),
+    ];
+    for (const tab of ordered) {
+      if (tab.id === undefined || tab.id === closedTabId || !tab.url || tab.url.startsWith('chrome-extension://')) continue;
+      try {
+        await this.context.browserContext.switchTab(tab.id);
+        return tab.id;
+      } catch {
+        // A candidate may be removed or denied by URL policy; continue to the next.
+      }
+    }
+    return undefined;
+  }
+
   async getActiveTabId(): Promise<number | undefined> {
     try {
       return (await this.context.browserContext.getCurrentPage()).tabId;
