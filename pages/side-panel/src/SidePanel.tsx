@@ -64,8 +64,11 @@ const SidePanel = () => {
   // 本地 PDF 必须对应当前浏览器已打开的 file:// URL，并且扩展已获得文件 URL 访问权限。
   const readAuthorizedLocalFile = useCallback(async (path: string, requestId: string, runId?: string, tabId?: number) => {
     if (!path.startsWith('file://') || !/\.pdf(?:[?#]|$)/i.test(path)) throw new Error('只允许读取已打开的 file:// 文件');
-    const tabs = await chrome.tabs.query({ url: path });
-    if (!tabs.some(tab => tab.url === path && (tabId === undefined || tab.id === tabId))) {
+    // Chrome's URL filter expects match patterns and can reject concrete file:// URLs.
+    // Enumerating tabs and comparing the exact canonical URL also prevents arbitrary path reads.
+    const tabs = await chrome.tabs.query({});
+    const targetUrl = new URL(path).href;
+    if (!tabs.some(tab => tab.url === targetUrl && (tabId === undefined || tab.id === tabId))) {
       throw new Error('该本地 PDF 未在浏览器中打开，不能读取任意文件路径');
     }
     const allowed = await new Promise<boolean>(resolve => chrome.extension.isAllowedFileSchemeAccess(resolve));
