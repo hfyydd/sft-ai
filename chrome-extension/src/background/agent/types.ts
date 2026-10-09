@@ -225,10 +225,13 @@ export class ActionResult {
 
   constructor(params: Partial<ActionResult> = {}) {
     this.isDone = params.isDone ?? false;
-    this.success = params.success ?? false;
-    this.interactedElement = params.interactedElement ?? null;
     this.extractedContent = params.extractedContent ?? null;
     this.error = params.error ?? null;
+    // Successful tool handlers conventionally return extractedContent rather than
+    // setting success explicitly. Make the result semantics truthful for the
+    // action verifier and evaluation harness while keeping empty placeholders false.
+    this.success = params.success ?? (!this.error && (this.isDone || Boolean(this.extractedContent)));
+    this.interactedElement = params.interactedElement ?? null;
     this.includeInMemory = params.includeInMemory ?? false;
     this.sideEffectUnknown = params.sideEffectUnknown ?? false;
   }
