@@ -129,7 +129,7 @@ export class AgentContext {
 
     const pendingWrite: PendingWrite = {
       toolName, parameterHash, tabId, url, expectedUrl,
-      startedAt: Date.now(), index, expectedValueHash,
+      startedAt: Date.now(), index, expectedValueHash, phase: 'executing',
     };
     this.pendingWrite = pendingWrite;
 
