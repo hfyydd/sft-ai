@@ -18,6 +18,10 @@ export class RunController {
   private starting = false;
   private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
   private executorSubscription: (() => void) | null = null;
+  private expectedTabClosures = new Set<number>();
+
+  expectTabClosure(tabId: number) { this.expectedTabClosures.add(tabId); }
+  releaseExpectedTabClosure(tabId: number) { this.expectedTabClosures.delete(tabId); }
 
   configure(factory: RunControllerFactory, verifier?: (run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) {
     this.factory = factory;
@@ -303,10 +307,36 @@ export class RunController {
   }
 
   async handleTabClosed(tabId: number) {
+    const expected = this.expectedTabClosures.delete(tabId);
     const runId = this.activeRunId;
     if (!runId) return;
     const run = await taskRunStore.getRun(runId);
-    if (!run || run.activeTabId !== tabId || !ACTIVE.has(run.status)) return;
+    if (!run || !ACTIVE.has(run.status)) return;
+
+    if (expected) {
+      await taskRunStore.appendEvent(runId, 'runtime.expected_tab_closed', {
+        tabId,
+        wasActiveTab: run.activeTabId === tabId,
+      });
+      if (run.activeTabId !== tabId) return;
+
+      const nextTabId = await this.executor?.switchToSafeActiveTabAfterClose(tabId).catch(() => undefined);
+      if (nextTabId !== undefined) {
+        await taskRunStore.updateStatus(runId, run.status, { activeTabId: nextTabId }).catch(() => undefined);
+        return;
+      }
+      await taskRunStore.updateStatus(runId, 'interrupted').catch(() => undefined);
+      await taskRunStore.appendEvent(runId, 'runtime.no_safe_tab_after_close', { tabId });
+      if (this.executor) {
+        await this.executor.cleanup().catch(() => undefined);
+        this.executorSubscription?.();
+        this.executorSubscription = null;
+        this.executor = null;
+      }
+      return;
+    }
+
+    if (run.activeTabId !== tabId) return;
     await taskRunStore.updateStatus(runId, 'interrupted');
     await taskRunStore.appendEvent(runId, 'runtime.tab_closed', { tabId });
     if (this.executor) {
