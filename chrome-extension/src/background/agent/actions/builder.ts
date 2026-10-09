@@ -36,6 +36,7 @@ import { wrapUntrustedContent } from '../messages/utils';
 import { HumanMessage } from '@langchain/core/messages';
 import { buildPdfPageUrl, extractPdfTextFromBytes, extractPdfTextFromUrl } from '../pdf';
 import { requestApproval } from '../../task/approval-gate';
+import { runController } from '../../task/run-controller';
 import { requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 import { taskRunStore } from '@extension/storage';
 import { askUser } from '../../task/user-gate';
@@ -675,7 +676,16 @@ export class ActionBuilder {
         reason: intent,
       });
       if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
-      await this.context.browserContext.closeTab(input.tab_id);
+      runController.expectTabClosure(input.tab_id);
+      try {
+        await this.context.browserContext.closeTab(input.tab_id);
+      } catch (error) {
+        runController.releaseExpectedTabClosure(input.tab_id);
+        throw error;
+      }
+      // If onRemoved was not delivered synchronously, avoid leaving an expected-close
+      // marker that could mask a later user-initiated close.
+      runController.releaseExpectedTabClosure(input.tab_id);
       const closed = !(await chrome.tabs.get(input.tab_id).catch(() => null));
       if (!closed) {
         const msg = '关闭标签页后仍然存在，结果无法确认';
