@@ -711,7 +711,7 @@ export class ActionBuilder {
               runId: this.context.taskId,
               tabId: page.tabId,
               path: tabUrl,
-              timeoutMs: 60_000,
+              timeoutMs: 10 * 60_000,
             });
             pdfResult=await extractPdfTextFromBytes(bytes,{
               cMapUrl:chrome.runtime.getURL('cmaps/'),
