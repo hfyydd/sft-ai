@@ -599,6 +599,7 @@ const SidePanel = () => {
       setCurrentSessionId(run.sessionId);
       runIdRef.current = run.id;
       setIsHistoricalSession(false);
+      setIsFollowUpMode(!['completed', 'failed', 'cancelled'].includes(run.status));
       void chatHistoryStore.getSession(run.sessionId).then(session => {
         if (session) setMessages(session.messages);
       });
