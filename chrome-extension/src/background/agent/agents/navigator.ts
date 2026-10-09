@@ -403,7 +403,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }).catch(() => undefined);
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, denied);
           results.push(new ActionResult({ error: denied, includeInMemory: true }));
-          continue;
+          // Do not execute any later tool calls from the same model response after a policy denial.
+          break;
         }
 
         const actionInstance = this.actionRegistry.getAction(actionName);
