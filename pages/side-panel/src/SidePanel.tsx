@@ -476,8 +476,8 @@ const SidePanel = () => {
               afterSequence: lastRunSequenceRef.current,
             });
           }
-          if (message.snapshot?.checkpoint?.pendingAction) setApprovalAction(message.snapshot.checkpoint.pendingAction);
-          if (message.snapshot?.checkpoint?.pendingUserRequest) setUserRequest(message.snapshot.checkpoint.pendingUserRequest);
+          setApprovalAction(message.snapshot?.checkpoint?.pendingAction ?? null);
+          setUserRequest(message.snapshot?.checkpoint?.pendingUserRequest ?? null);
           const pendingFile = message.snapshot?.checkpoint?.pendingFileRead;
           if (pendingFile) {
             void readAuthorizedLocalFile(pendingFile.path, pendingFile.requestId, pendingFile.runId, pendingFile.tabId)
@@ -525,6 +525,9 @@ const SidePanel = () => {
           });
           setInputEnabled(true);
           setShowStopButton(false);
+          // An expired/invalid approval or user request may have changed durable
+          // state on the background. Refresh it so stale cards cannot strand a run.
+          if (runIdRef.current && portRef.current) requestRunSnapshot(runIdRef.current);
         } else if (message && message.type === 'speech_to_text_result') {
           // Handle speech-to-text result
           if (message.text && setInputTextRef.current) {
