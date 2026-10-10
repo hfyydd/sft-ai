@@ -1207,7 +1207,7 @@ export default class Page {
       const form = (target as HTMLButtonElement).form ?? target.closest('form');
       if (!form) return '未识别到关联表单；请在当前页面核对操作目标后再决定是否批准';
 
-      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|card[_-]?number|security[_-]?code|验证码|密码|安全码)/i;
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|cvc|card[_-]?number|credit[_-]?card|bank[_-]?account|security[_-]?code|social[_-]?security|national[_-]?id|身份证|证件号码|银行卡号|信用卡号|银行账号|验证码|密码|安全码)/i;
       const controls = Array.from(form.querySelectorAll(
         'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select, [contenteditable="true"]',
       )).slice(0, 24);
