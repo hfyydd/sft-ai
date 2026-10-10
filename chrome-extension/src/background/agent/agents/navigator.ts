@@ -571,11 +571,16 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           crossDomainLink ||
           crossDomainNavigation ||
           (actionName === 'send_keys' && /enter|return/i.test(keys));
+        const targetUrl = normalizedRecord && typeof normalizedRecord.url === 'string'
+          ? normalizedRecord.url
+          : undefined;
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
           parameterHash: actionParameterHash,
           risk: classifyActionRisk(actionName, normalizedActionArgs, riskText),
           requiresApproval: requiresConfirmation,
+          sourceUrl: browserState.url,
+          targetUrl,
           step: this.context.nSteps,
         }).catch(() => undefined);
 
@@ -703,10 +708,42 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         // TODO: wait for 1 second for now, need to optimize this to avoid unnecessary waiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         if (error instanceof URLNotAllowedError) {
+          const deniedUrl = errorMessage.match(/URL:\\s*(\\S+)\\s+is not allowed/i)?.[1]
+            ?? (normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs
+              ? String((normalizedActionArgs as { url: unknown }).url)
+              : undefined);
+          await taskRunStore.appendEvent(this.context.taskId, 'navigation.denied', {
+            toolName: actionName,
+            sourceUrl: browserState.url,
+            targetUrl: deniedUrl,
+            error: errorMessage,
+          }).catch(() => undefined);
+
+          const navigationOnly = ['go_to_url', 'open_tab', 'go_back', 'search_google'].includes(actionName);
+          if (navigationOnly && this.context.pendingWrite?.toolName === actionName) {
+            const event = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_not_executed', {
+              toolName: actionName,
+              parameterHash: this.context.pendingWrite.parameterHash,
+              reason: 'url_policy_denied_before_action',
+            }).catch(() => undefined);
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId).catch(() => undefined);
+            if (event && checkpoint?.pendingWrite?.parameterHash === this.context.pendingWrite.parameterHash) {
+              await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined }).catch(() => undefined);
+            }
+            this.context.pendingWrite = undefined;
+          } else if (PENDING_WRITE_TOOLS.has(actionName) && this.context.pendingWrite) {
+            await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+              toolName: actionName,
+              parameterHash: this.context.pendingWrite.parameterHash,
+              error: errorMessage,
+              reason: 'navigation_rejected_after_write_attempt',
+            }).catch(() => undefined);
+            await this.context.pause();
+          }
           throw error;
         }
-        const errorMessage = error instanceof Error ? error.message : String(error);
         if (PENDING_WRITE_TOOLS.has(actionName) && this.context.pendingWrite) {
           await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
             toolName: actionName,
