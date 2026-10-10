@@ -1510,6 +1510,27 @@ export default class Page {
     return selectorMap.get(index) || null;
   }
 
+  async isFormSubmitControl(elementNode: DOMElementNode): Promise<boolean> {
+    if (!this._puppeteerPage) return false;
+    const element = await this.locateElement(elementNode);
+    if (!element) return false;
+    return element.evaluate(el => {
+      if (el instanceof HTMLButtonElement) return Boolean(el.form && el.type === 'submit');
+      if (el instanceof HTMLInputElement) return Boolean(el.form && ['submit', 'image'].includes(el.type));
+      return false;
+    });
+  }
+
+  async isDownloadLink(elementNode: DOMElementNode): Promise<boolean> {
+    if (!this._puppeteerPage) return false;
+    const element = await this.locateElement(elementNode);
+    if (!element) return Boolean(elementNode.attributes?.download);
+    return element.evaluate(el => {
+      if (!(el instanceof HTMLAnchorElement)) return el.hasAttribute('download');
+      return el.hasAttribute('download') || Boolean(el.download);
+    });
+  }
+
   isFileUploader(elementNode: DOMElementNode, maxDepth = 3, currentDepth = 0): boolean {
     if (currentDepth > maxDepth) {
       return false;
