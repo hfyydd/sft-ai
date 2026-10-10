@@ -9,6 +9,7 @@ interface ApprovalRequest {
   url?: string;
   targetUrl?: string;
   reason?: string;
+  previewSummary?: string;
 }
 
 const pending = new Map<string, (approved: boolean) => void>();
@@ -117,6 +118,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     runId: input.runId,
     toolName: input.toolName,
     argsSummary: makeAuditSummary(input.args),
+    previewSummary: input.previewSummary ? input.previewSummary.slice(0, 5000) : undefined,
     tabId: input.tabId,
     url: input.url,
     targetUrl: input.targetUrl,
