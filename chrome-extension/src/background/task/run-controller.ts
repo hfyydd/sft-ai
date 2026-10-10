@@ -16,6 +16,7 @@ export class RunController {
   private factory: RunControllerFactory | null = null;
   private subscribers = new Set<(event: AgentEvent, sequence: number) => Promise<void> | void>();
   private starting = false;
+  private executionActive = false;
   private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
   private executorSubscription: (() => void) | null = null;
   private expectedTabClosures = new Set<number>();
@@ -145,12 +146,25 @@ export class RunController {
   }
 
   private async executeDetached(run: TaskRun) {
-    try { await this.executor?.execute(); } catch (error) {
+    if (this.executionActive) return;
+    this.executionActive = true;
+    try {
+      await this.executor?.execute();
+    } catch (error) {
       await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
-      await taskRunStore.appendEvent(run.id, 'runtime.exception', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
+      await taskRunStore.appendEvent(run.id, 'runtime.exception', {
+        error: error instanceof Error ? error.message : String(error),
+      }).catch(() => undefined);
     } finally {
-      if (this.executor) await this.executor.cleanup();
-      await this.clearIfTerminal();
+      this.executionActive = false;
+      const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
+      // Paused or user-gated runs may be resumed in the same worker. Preserve the
+      // Executor/BrowserContext until a terminal state; recovery after a real worker
+      // restart will construct a new Executor from the checkpoint.
+      if (currentRun && TERMINAL.has(currentRun.status)) {
+        if (this.executor) await this.executor.cleanup();
+        await this.clearIfTerminal();
+      }
     }
   }
 
@@ -273,7 +287,7 @@ export class RunController {
     await taskRunStore.updateStatus(run.id, 'running');
     this.executorSubscription?.();
     this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
-    void this.executeDetached(run);
+    if (!this.executionActive) void this.executeDetached(run);
   }
 
   async startReplay(runId: string, historySessionId: string, task: string, tabId: number) {
