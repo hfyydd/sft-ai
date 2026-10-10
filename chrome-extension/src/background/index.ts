@@ -111,6 +111,16 @@ runController.configure(
     if (pendingWrite.toolName === 'send_keys' && pendingWrite.beforeObservationSignature) {
       return (await page.getObservationSignature()) !== pendingWrite.beforeObservationSignature;
     }
+    if (pendingWrite.toolName === 'fill_form' && pendingWrite.expectedFieldHashes?.length) {
+      for (const field of pendingWrite.expectedFieldHashes) {
+        const value = await page.getInputValue(field.index);
+        if (value === null) return false;
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+        const actualHash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+        if (actualHash !== field.valueHash) return false;
+      }
+      return true;
+    }
     if (
       pendingWrite.expectedValueHash &&
       pendingWrite.index !== undefined &&
