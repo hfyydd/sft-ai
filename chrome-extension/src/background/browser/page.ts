@@ -1171,6 +1171,46 @@ export default class Page {
     return element.evaluate(el => el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text?.trim() ?? null) : null);
   }
 
+  async getFormPreview(elementNode: DOMElementNode): Promise<string> {
+    if (!this._puppeteerPage) throw new Error('Puppeteer is not connected');
+    const element = await this.locateElement(elementNode);
+    if (!element) return '无法读取待提交表单：目标元素已失效';
+
+    return element.evaluate(el => {
+      const target = el as HTMLElement;
+      const form = (target as HTMLButtonElement).form ?? target.closest('form');
+      if (!form) return '未识别到关联表单；请在当前页面核对操作目标后再决定是否批准';
+
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|card[_-]?number|security[_-]?code|验证码|密码|安全码)/i;
+      const controls = Array.from(form.querySelectorAll(
+        'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select, [contenteditable="true"]',
+      )).slice(0, 24);
+
+      if (!controls.length) return '关联表单未发现可预览字段';
+      return controls.map((control, index) => {
+        const input = control as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+        const id = control.getAttribute('id') || '';
+        const externalLabel = id
+          ? Array.from(document.querySelectorAll('label')).find(label => label.htmlFor === id)?.innerText
+          : undefined;
+        const labelText = externalLabel || control.closest('label')?.textContent ||
+          control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
+          control.getAttribute('name') || control.getAttribute('id') || `字段 ${index + 1}`;
+        const label = String(labelText).replace(/\\s+/g, ' ').trim().slice(0, 80) || `字段 ${index + 1}`;
+        const type = (control.getAttribute('type') || control.tagName).toLowerCase();
+        let value = control instanceof HTMLSelectElement
+          ? Array.from(control.selectedOptions).map(option => option.textContent || '').join(', ')
+          : ('value' in control ? String((control as HTMLInputElement).value || '') : String(control.textContent || ''));
+        const sensitive = type === 'password' || secretPattern.test([
+          label, control.getAttribute('name') || '', control.getAttribute('autocomplete') || '', type,
+        ].join(' '));
+        if (sensitive && value) value = '[已隐藏，' + value.length + ' 个字符]';
+        if (value.length > 160) value = value.slice(0, 160) + '…';
+        return (index + 1) + '. ' + label + '：' + (value || '（空）');
+      }).join('\\n');
+    });
+  }
+
   async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
     const element = await this.locateElement(elementNode);
     if (!element) return false;
