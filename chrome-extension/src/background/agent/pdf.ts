@@ -120,13 +120,13 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
     for (const item of content.items) {
       if ('str' in item) {
         pageText += item.str;
-        if ('hasEOL' in item && item.hasEOL) pageText += '\\n';
+        if ('hasEOL' in item && item.hasEOL) pageText += '\n';
       }
     }
     pageText = pageText.trim();
     const charOffset = p === startPage ? Math.min(initialCharOffset, pageText.length) : 0;
     const remainingPageText = pageText.slice(charOffset);
-    const pageHeader = (text ? '\\n' : '') + `--- 第 ${p} 页 ---\\n`;
+    const pageHeader = (text ? '\n' : '') + `--- 第 ${p} 页 ---\n`;
     const room = Math.max(0, maxChars - text.length);
     logger.info(`page ${p}: ${pageText.length} chars, cursor ${charOffset}`);
 
