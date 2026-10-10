@@ -1215,7 +1215,7 @@ const SidePanel = () => {
                   {t('task_pause')}
                 </button>
               )}
-              {['paused', 'interrupted'].includes(runSnapshot.run.status) && !runSnapshot.checkpoint?.pendingAction && !runSnapshot.checkpoint?.pendingUserRequest && !runSnapshot.checkpoint?.pendingFileRead && (
+              {['paused', 'interrupted'].includes(runSnapshot.run.status) && !runSnapshot.checkpoint?.pendingAction && !runSnapshot.checkpoint?.pendingUserRequest && (!runSnapshot.checkpoint?.pendingFileRead || runSnapshot.run.status === 'interrupted') && (
                 <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'resume_task', taskId: runSnapshot.run.id })}>
                   {t('task_resume')}
                 </button>
