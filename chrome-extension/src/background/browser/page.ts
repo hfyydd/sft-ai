@@ -1196,7 +1196,7 @@ export default class Page {
         const labelText = externalLabel || control.closest('label')?.textContent ||
           control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
           control.getAttribute('name') || control.getAttribute('id') || `字段 ${index + 1}`;
-        const label = String(labelText).replace(/\\s+/g, ' ').trim().slice(0, 80) || `字段 ${index + 1}`;
+        const label = String(labelText).replace(/\s+/g, ' ').trim().slice(0, 80) || `字段 ${index + 1}`;
         const type = (control.getAttribute('type') || control.tagName).toLowerCase();
         let value = control instanceof HTMLSelectElement
           ? Array.from(control.selectedOptions).map(option => option.textContent || '').join(', ')
@@ -1207,7 +1207,7 @@ export default class Page {
         if (sensitive && value) value = '[已隐藏，' + value.length + ' 个字符]';
         if (value.length > 160) value = value.slice(0, 160) + '…';
         return (index + 1) + '. ' + label + '：' + (value || '（空）');
-      }).join('\\n');
+      }).join('\n');
     });
   }
 
