@@ -623,7 +623,8 @@ export class ActionBuilder {
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, msg);
           return new ActionResult({ error: msg, includeInMemory: true });
         }
-        const msg = t('act_inputText_ok', [input.text, input.index.toString()]);
+        // Never persist the entered field value in task events or working memory.
+        const msg = `输入框 [${input.index}] 已填写并完成回读校验（${input.text.length} 个字符）`;
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
         return new ActionResult({ extractedContent: msg, includeInMemory: true });
       },
@@ -768,7 +769,7 @@ export class ActionBuilder {
       this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
       // cache content is untrusted content, it is not instructions
-      const rawMsg = t('act_cache_ok', [input.content]);
+      const rawMsg = `已缓存 ${input.content.length} 个字符，并保存为来源证据`;
       try {
         const page = await this.context.browserContext.getCurrentPage();
         await this.persistEvidence('cache', page.tabId, page.url(), await page.title(), input.content);
@@ -1250,7 +1251,8 @@ export class ActionBuilder {
     // Select dropdown option for interactive element index by the text of the option you want to select'
     const selectDropdownOption = new Action(
       async (input: z.infer<typeof selectDropdownOptionActionSchema.schema>) => {
-        const intent = input.intent || t('act_selectDropdownOption_start', [input.text, input.index.toString()]);
+        // Avoid persisting selected field values in task event details.
+        const intent = input.intent || `选择下拉框 [${input.index}] 的指定选项`;
         this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_START, intent);
 
         const page = await this.context.browserContext.getCurrentPage();
@@ -1287,16 +1289,16 @@ export class ActionBuilder {
         }
 
         try {
-          const result = await page.selectDropdownOption(input.index, input.text);
+          await page.selectDropdownOption(input.index, input.text);
           const verified = await page.verifyDropdownSelection(input.index, input.text);
           if (!verified) {
             const errorMsg = '下拉框写入后回读校验失败: index=' + input.index;
             this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, errorMsg);
             return new ActionResult({ error: errorMsg, includeInMemory: true });
           }
-          const msg = t('act_selectDropdownOption_ok', [input.text, input.index.toString()]);
+          const msg = `下拉框 [${input.index}] 已选择并完成回读校验`;
           this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_OK, msg);
-          return new ActionResult({ extractedContent: result, success: true, includeInMemory: true });
+          return new ActionResult({ extractedContent: msg, success: true, includeInMemory: true });
         } catch (error) {
           const errorMsg = t('act_selectDropdownOption_failed', [
             error instanceof Error ? error.message : String(error),
