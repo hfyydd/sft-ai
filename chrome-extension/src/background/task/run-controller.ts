@@ -17,6 +17,7 @@ export class RunController {
   private subscribers = new Set<(event: AgentEvent, sequence: number) => Promise<void> | void>();
   private starting = false;
   private executionActive = false;
+  private executionPromise: Promise<void> | null = null;
   private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
   private executorSubscription: (() => void) | null = null;
   private expectedTabClosures = new Set<number>();
@@ -121,6 +122,11 @@ export class RunController {
     if (!this.factory) throw new Error('RunController executor factory is not configured');
     this.starting = true;
     try {
+      // A previous executor may still be unwinding after a tab/debugger interruption.
+      // Never replace the shared executor until that loop has actually stopped.
+      if (this.executionActive && !this.executor) {
+        await this.executionPromise?.catch(() => undefined);
+      }
       if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
       this.activeRunId = run.id;
       try {
@@ -145,27 +151,50 @@ export class RunController {
     }
   }
 
-  private async executeDetached(run: TaskRun) {
-    if (this.executionActive) return;
+  private executeWithLifecycle(
+    run: TaskRun,
+    executor: Executor | null,
+    execute: () => Promise<unknown>,
+    errorEventType: string,
+  ): Promise<void> {
+    if (this.executionActive) return this.executionPromise ?? Promise.resolve();
     this.executionActive = true;
-    try {
-      await this.executor?.execute();
-    } catch (error) {
-      await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
-      await taskRunStore.appendEvent(run.id, 'runtime.exception', {
-        error: error instanceof Error ? error.message : String(error),
-      }).catch(() => undefined);
-    } finally {
-      this.executionActive = false;
-      const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
-      // Paused or user-gated runs may be resumed in the same worker. Preserve the
-      // Executor/BrowserContext until a terminal state; recovery after a real worker
-      // restart will construct a new Executor from the checkpoint.
-      if (currentRun && TERMINAL.has(currentRun.status)) {
-        if (this.executor) await this.executor.cleanup();
-        await this.clearIfTerminal();
+
+    let execution: Promise<void>;
+    execution = (async () => {
+      try {
+        await execute();
+      } catch (error) {
+        const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
+        if (currentRun && !TERMINAL.has(currentRun.status) && currentRun.status !== 'interrupted') {
+          await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+        }
+        await taskRunStore.appendEvent(run.id, errorEventType, {
+          error: error instanceof Error ? error.message : String(error),
+        }).catch(() => undefined);
+      } finally {
+        const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
+        // Paused and user-gated runs keep their executor while this worker stays alive.
+        if (currentRun && TERMINAL.has(currentRun.status)) {
+          if (executor) await executor.cleanup().catch(() => undefined);
+          if (this.executor === executor) await this.clearIfTerminal();
+        }
+        if (this.executionPromise === execution) {
+          this.executionPromise = null;
+          this.executionActive = false;
+        }
       }
-    }
+    })();
+
+    this.executionPromise = execution;
+    return execution;
+  }
+
+  private executeDetached(run: TaskRun): Promise<void> {
+    const executor = this.executor;
+    return this.executeWithLifecycle(run, executor, async () => {
+      await executor?.execute();
+    }, 'runtime.exception');
   }
 
   private async hydrateExecutor(run: TaskRun) {
@@ -308,16 +337,11 @@ export class RunController {
     }
   }
 
-  private async executeReplayDetached(run: TaskRun, historySessionId: string) {
-    try {
-      await this.executor?.replayHistory(historySessionId);
-    } catch (error) {
-      await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
-      await taskRunStore.appendEvent(run.id, 'runtime.replay_exception', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
-    } finally {
-      if (this.executor) await this.executor.cleanup();
-      await this.clearIfTerminal();
-    }
+  private executeReplayDetached(run: TaskRun, historySessionId: string): Promise<void> {
+    const executor = this.executor;
+    return this.executeWithLifecycle(run, executor, async () => {
+      await executor?.replayHistory(historySessionId);
+    }, 'runtime.replay_exception');
   }
 
   async handleTabClosed(tabId: number) {
