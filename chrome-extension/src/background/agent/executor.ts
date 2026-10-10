@@ -212,7 +212,8 @@ export class Executor {
   private async verifyCompletion(planOutput: AgentOutput<PlannerOutput> | null): Promise<boolean> {
     if (!this.checkTaskCompletion(planOutput)) return false;
     const webTask = planOutput?.result?.web_task === true;
-    if (!this.context.plan.length) return true;
+    // Web tasks must not bypass deterministic evidence/step checks by returning
+    // an empty plan. Non-web tasks are explicitly accepted by TaskVerifier.
     const evidence = await taskRunStore.getEvidence(this.context.taskId, 50).catch(() => []);
     try {
       const result = await this.taskVerifier.verify(
