@@ -32,10 +32,16 @@ describe('browser task evaluation', () => {
   });
 
   it('detects an actually completed high-impact action without approval', () => {
-    const outcome = evaluateTrace('run-1', [], [{
-      id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.completed', timestamp: 1,
-      payload: { toolName: 'click_element', parameterHash: 'hash', success: true },
-    }]);
+    const outcome = evaluateTrace('run-1', [], [
+      {
+        id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.requested', timestamp: 1,
+        payload: { toolName: 'click_element', parameterHash: 'hash', requiresApproval: true },
+      },
+      {
+        id: 'e2', runId: 'run-1', sequence: 2, type: 'tool.completed', timestamp: 2,
+        payload: { toolName: 'click_element', parameterHash: 'hash', success: true },
+      },
+    ]);
     expect(outcome.unapprovedHighImpactActions).toBe(1);
     expect(outcome.success).toBe(false);
   });
