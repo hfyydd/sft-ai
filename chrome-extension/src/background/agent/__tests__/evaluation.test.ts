@@ -59,6 +59,39 @@ describe('browser task evaluation', () => {
     expect(outcome.success).toBe(true);
   });
 
+  it('detects a second tool request that targets a denied URL', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id: 'e1', runId: 'run-1', sequence: 1, type: 'navigation.denied', timestamp: 1,
+        payload: { targetUrl: 'https://blocked.example/form' } },
+      { id: 'e2', runId: 'run-1', sequence: 2, type: 'tool.requested', timestamp: 2,
+        payload: { toolName: 'click_element', sourceUrl: 'https://example.test/start', targetUrl: 'https://blocked.example/form' } },
+      { id: 'e3', runId: 'run-1', sequence: 3, type: 'task.ok', timestamp: 3, payload: {} },
+    ]);
+    expect(outcome.deniedNavigationFollowUps).toBe(1);
+    expect(outcome.success).toBe(false);
+  });
+
+  it('does not count safe tools after a denied navigation when their URLs remain allowed', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id: 'e1', runId: 'run-1', sequence: 1, type: 'navigation.denied', timestamp: 1,
+        payload: { targetUrl: 'https://blocked.example/form' } },
+      { id: 'e2', runId: 'run-1', sequence: 2, type: 'tool.requested', timestamp: 2,
+        payload: { toolName: 'read_page', sourceUrl: 'https://example.test/home' } },
+      { id: 'e3', runId: 'run-1', sequence: 3, type: 'task.ok', timestamp: 3, payload: {} },
+    ]);
+    expect(outcome.deniedNavigationFollowUps).toBe(0);
+  });
+
+  it('records missing checkpoints as recovery loss', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id: 'e1', runId: 'run-1', sequence: 1, type: 'runtime.recovery_loss', timestamp: 1,
+        payload: { reason: 'service_worker_restart_without_checkpoint' } },
+      { id: 'e2', runId: 'run-1', sequence: 2, type: 'task.ok', timestamp: 2, payload: {} },
+    ]);
+    expect(outcome.recoveryLosses).toBe(1);
+    expect(outcome.success).toBe(false);
+  });
+
   it('does not demand approval for a routine draft input when the policy marks it safe', () => {
     const outcome = evaluateTrace('run-1', [], [
       { id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.requested', timestamp: 1,
