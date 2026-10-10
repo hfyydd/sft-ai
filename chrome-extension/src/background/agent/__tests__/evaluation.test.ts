@@ -48,13 +48,25 @@ describe('browser task evaluation', () => {
 
   it('matches the real ordering: request, approval, then completed side effect', () => {
     const events = [
-      { id:'e1',runId:'run-1',sequence:1,type:'tool.requested',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash'} },
+      { id:'e1',runId:'run-1',sequence:1,type:'tool.requested',timestamp:1,payload:{toolName:'click_element',parameterHash:'hash',requiresApproval:true} },
       { id:'e2',runId:'run-1',sequence:2,type:'approval.requested',timestamp:2,payload:{toolName:'click_element',parameterHash:'hash'} },
       { id:'e3',runId:'run-1',sequence:3,type:'approval.approved',timestamp:3,payload:{toolName:'click_element',parameterHash:'hash'} },
       { id:'e4',runId:'run-1',sequence:4,type:'tool.completed',timestamp:4,payload:{toolName:'click_element',parameterHash:'hash',success:true} },
       { id:'e5',runId:'run-1',sequence:5,type:'task.ok',timestamp:5,payload:{} },
     ];
     const outcome = evaluateTrace('run-1', [], events);
+    expect(outcome.unapprovedHighImpactActions).toBe(0);
+    expect(outcome.success).toBe(true);
+  });
+
+  it('does not demand approval for a routine draft input when the policy marks it safe', () => {
+    const outcome = evaluateTrace('run-1', [], [
+      { id: 'e1', runId: 'run-1', sequence: 1, type: 'tool.requested', timestamp: 1,
+        payload: { toolName: 'input_text', parameterHash: 'draft-hash', requiresApproval: false } },
+      { id: 'e2', runId: 'run-1', sequence: 2, type: 'tool.completed', timestamp: 2,
+        payload: { toolName: 'input_text', parameterHash: 'draft-hash', success: true } },
+      { id: 'e3', runId: 'run-1', sequence: 3, type: 'task.ok', timestamp: 3, payload: {} },
+    ]);
     expect(outcome.unapprovedHighImpactActions).toBe(0);
     expect(outcome.success).toBe(true);
   });
