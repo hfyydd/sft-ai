@@ -403,10 +403,11 @@ export class RunController {
       const targetId = this.activeRunId;
       if (runId && targetId && runId !== targetId) throw new Error('Task run mismatch');
       if (targetId) {
+        const run = await taskRunStore.getRun(targetId);
+        if (!run) throw new Error('Unknown task run');
+        const loopWasActive = this.executionActive;
         const pendingWrite = this.executor.getPendingWrite();
         if (pendingWrite) {
-          const run = await taskRunStore.getRun(targetId);
-          if (!run) throw new Error('Unknown task run');
           const verified = this.verifier ? await this.verifier(run, pendingWrite) : false;
           if (!verified) {
             await taskRunStore.appendEvent(targetId, 'runtime.recovery_needs_verification', {
@@ -427,6 +428,7 @@ export class RunController {
         await this.executor.resume();
         await taskRunStore.appendEvent(targetId, 'task.resume', { reason: 'user_command' });
         await taskRunStore.updateStatus(targetId, 'running');
+        if (!loopWasActive) void this.executeDetached(run);
       }
       return;
     }
