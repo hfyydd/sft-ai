@@ -45,6 +45,7 @@ import { requestLocalPdfBytes } from '../../task/local-file-gate';
 const logger = createLogger('Action');
 
 const SENSITIVE_INTENT = /(提交|删除|购买|支付|付款|发送|授权|下载|保存|确认|结算|下单|注销|关闭账号|submit|delete|purchase|pay|checkout|send|authorize|download)/i;
+const SENSITIVE_FIELD = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|card[_-]?number|security[_-]?code|验证码|密码|安全码|银行卡|信用卡|身份证号码)/i;
 
 const needsApproval = (toolName:string, intent:string, args:unknown, elementText = '') => {
   const keys = args && typeof args === 'object' && 'keys' in args ? String(args.keys || '') : '';
@@ -613,7 +614,12 @@ export class ActionBuilder {
         if (!elementNode) {
           throw new Error(t('act_errors_elementNotExist', [input.index.toString()]));
         }
-        if (needsApproval('input_text', intent, input)) {
+        const fieldRiskText = [
+          elementNode.getAllTextTillNextClickableElement(2),
+          JSON.stringify(elementNode.attributes || {}),
+        ].join(' ');
+        const sensitiveField = SENSITIVE_FIELD.test(fieldRiskText);
+        if (sensitiveField || needsApproval('input_text', intent, input, fieldRiskText)) {
           const previewSummary = await page.getInputPreview(elementNode, input.text).catch(() => '无法生成输入预览；请先核对当前字段。');
           const approved = await requestApproval({
             runId: this.context.taskId,
