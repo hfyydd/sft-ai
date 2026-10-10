@@ -88,8 +88,8 @@ export function validatePdfBytes(data: Uint8Array): void {
 
 export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptions): Promise<PdfExtractResult> {
   validatePdfBytes(data);
-  const maxPages = Math.min(20, options?.maxPages ?? 20);
-  const maxChars = Math.min(30000, options?.maxChars ?? 30000);
+  const maxPages = Math.min(20, Math.max(1, Math.floor(options?.maxPages ?? 20)));
+  const maxChars = Math.min(30000, Math.max(500, Math.floor(options?.maxChars ?? 30000)));
   const cMapUrl = options?.cMapUrl?.includes('/cmaps/') ? options.cMapUrl : CMAP_BASE;
   const pdfjsLib = await loadPdfjs();
 
@@ -105,7 +105,11 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
 
   const numPages = pdf.numPages;
   logger.info(`PDF opened: ${numPages} pages (cap ${maxPages})`);
-  const startPage = Math.min(numPages || 1, Math.max(1, options?.startPage ?? 1));
+  if (numPages < 1) {
+    await pdf.destroy();
+    throw new Error('PDF 文件不包含可读取的页面');
+  }
+  const startPage = Math.min(numPages, Math.max(1, Math.floor(options?.startPage ?? 1)));
   const endPage = Math.min(numPages, startPage + maxPages - 1);
   let text = '';
   let truncated = endPage < numPages;
@@ -113,7 +117,7 @@ export async function extractPdfData(data: Uint8Array, options?: PdfExtractOptio
   let lastExtractedPage = startPage - 1;
   let nextPageStart: number | undefined;
   let nextPageCharOffset: number | undefined;
-  const initialCharOffset = Math.max(0, options?.startCharOffset ?? 0);
+  const initialCharOffset = Math.max(0, Math.floor(options?.startCharOffset ?? 0));
 
   for (let p = startPage; p <= endPage; p++) {
     const page = await pdf.getPage(p);
