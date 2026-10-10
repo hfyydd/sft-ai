@@ -9,7 +9,7 @@ export function classifyActionRisk(toolName: string, args: unknown, elementText 
   if (FINANCIAL_RE.test(raw)) return 'financial';
   if (DESTRUCTIVE_RE.test(raw) || toolName === 'close_tab') return 'destructive';
   if (WRITE_RE.test(raw)) return 'write';
-  if (/^(read_page|cache_content|wait|scroll_to_percent|scroll_to_top|scroll_to_bottom|previous_page|next_page|scroll_to_text|get_dropdown_options|done)$/.test(toolName)) return 'read';
+  if (/^(read_page|read_evidence|cache_content|wait|scroll_to_percent|scroll_to_top|scroll_to_bottom|previous_page|next_page|scroll_to_text|get_dropdown_options|done)$/.test(toolName)) return 'read';
   if (/^(go_to_url|open_tab|switch_tab|go_back|search_google)$/.test(toolName)) return 'navigate';
   if (/^(click_element|input_text|select_dropdown_option|send_keys|fill_form|ask_user)$/.test(toolName)) return 'interaction';
   return 'write';
