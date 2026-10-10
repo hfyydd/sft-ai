@@ -3,6 +3,7 @@ export type ActionRisk = 'read' | 'navigate' | 'interaction' | 'write' | 'destru
 const FINANCIAL_RE = /(支付|付款|购买|下单|充值|结算|转账|payment|purchase|checkout|buy|transfer)/i;
 const DESTRUCTIVE_RE = /(删除|移除|注销|关闭账号|永久删除|delete|remove|unsubscribe|cancel subscription)/i;
 const WRITE_RE = /(提交|发送|发布|保存|上传|下载|授权|确认|提交表单|submit|send|publish|save|upload|download|authorize|confirm)/i;
+const SENSITIVE_FIELD_RE = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|cvc|card[_-]?number|credit[_-]?card|bank[_-]?account|security[_-]?code|social[_-]?security|national[_-]?id|身份证|证件号码|银行卡号|信用卡号|银行账号|验证码|密码|安全码)/i;
 
 export function classifyActionRisk(toolName: string, args: unknown, elementText = ''): ActionRisk {
   const raw = [toolName, JSON.stringify(args), elementText].join(' ');
@@ -16,6 +17,10 @@ export function classifyActionRisk(toolName: string, args: unknown, elementText 
 }
 
 export function requiresApproval(toolName: string, args: unknown, elementText = ''): boolean {
+  if (
+    (toolName === 'input_text' || toolName === 'select_dropdown_option' || toolName === 'fill_form') &&
+    SENSITIVE_FIELD_RE.test(elementText)
+  ) return true;
   const risk = classifyActionRisk(toolName, args, elementText);
   return risk === 'write' || risk === 'destructive' || risk === 'financial';
 }
