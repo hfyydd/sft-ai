@@ -34,6 +34,18 @@ export default class BrowserContext {
     this._currentTabId = tabId;
   }
 
+  public assertUrlAllowed(url: string): void {
+    if (!isUrlAllowed(url, this._config.allowedUrls, this._config.deniedUrls)) {
+      throw new URLNotAllowedError(`URL: ${url} is not allowed`);
+    }
+  }
+
+  private async assertTabUrlAllowed(tabId: number): Promise<chrome.tabs.Tab> {
+    const tab = await chrome.tabs.get(tabId);
+    this.assertUrlAllowed(tab.url || '');
+    return tab;
+  }
+
   private async _getOrCreatePage(tab: chrome.tabs.Tab, forceUpdate = false): Promise<Page> {
     if (!tab.id) {
       throw new Error('Tab ID is not available');
@@ -107,8 +119,10 @@ export default class BrowserContext {
         activeTab = tab;
       }
       logger.info('active tab', activeTab.id, activeTab.url, activeTab.title);
+      this.assertUrlAllowed(activeTab.url || '');
       const page = await this._getOrCreatePage(activeTab);
-      await this.attachPage(page);
+      const attached = await this.attachPage(page);
+      if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
       this._currentTabId = activeTab.id || null;
       return page;
     }
@@ -117,9 +131,10 @@ export default class BrowserContext {
     const existingPage = this._attachedPages.get(this._currentTabId);
     if (!existingPage) {
       const tab = await chrome.tabs.get(this._currentTabId);
+      this.assertUrlAllowed(tab.url || '');
       const page = await this._getOrCreatePage(tab);
-      // set current tab id to null if the page is not attached successfully
-      await this.attachPage(page);
+      const attached = await this.attachPage(page);
+      if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
       return page;
     }
 
@@ -221,11 +236,13 @@ export default class BrowserContext {
   public async switchTab(tabId: number): Promise<Page> {
     logger.info('switchTab', tabId);
 
+    await this.assertTabUrlAllowed(tabId);
     await chrome.tabs.update(tabId, { active: true });
     await this.waitForTabEvents(tabId, { waitForUpdate: false });
 
     const page = await this._getOrCreatePage(await chrome.tabs.get(tabId));
-    await this.attachPage(page);
+    const attached = await this.attachPage(page);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tabId;
     return page;
   }
@@ -254,9 +271,13 @@ export default class BrowserContext {
     await chrome.tabs.update(tabId, { url, active: true });
     await this.waitForTabEvents(tabId);
 
+    // Validate the actual final URL after redirects before exposing the page to the agent.
+    const finalTab = await this.assertTabUrlAllowed(tabId);
+
     // Reattach the page after navigation completes
-    const updatedPage = await this._getOrCreatePage(await chrome.tabs.get(tabId), true);
-    await this.attachPage(updatedPage);
+    const updatedPage = await this._getOrCreatePage(finalTab, true);
+    const attached = await this.attachPage(updatedPage);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tabId;
   }
 
@@ -273,11 +294,12 @@ export default class BrowserContext {
     // Wait for tab events
     await this.waitForTabEvents(tab.id);
 
-    // Get updated tab information
-    const updatedTab = await chrome.tabs.get(tab.id);
+    // Get updated tab information and validate the final URL after redirects.
+    const updatedTab = await this.assertTabUrlAllowed(tab.id);
     // Create and attach the page after tab is fully loaded and activated
     const page = await this._getOrCreatePage(updatedTab);
-    await this.attachPage(page);
+    const attached = await this.attachPage(page);
+    if (!attached) throw new Error('无法附加浏览器调试会话，请关闭 DevTools 后重试');
     this._currentTabId = tab.id;
 
     return page;

@@ -1,0 +1,561 @@
+import { taskRunStore, type PendingWrite, type TaskRun, type TaskRunStatus } from '@extension/storage';
+import type { Executor } from '../agent/executor';
+import type { AgentEvent } from '../agent/event/types';
+import { classifyFailure } from '../agent/recovery';
+
+const TERMINAL = new Set<TaskRunStatus>(['completed', 'failed', 'cancelled']);
+const ACTIVE = new Set<TaskRunStatus>(['queued', 'running', 'waiting_approval', 'waiting_user', 'paused', 'interrupted']);
+
+export interface RunControllerFactory {
+  (run: TaskRun): Promise<Executor>;
+}
+
+export class RunController {
+  private executor: Executor | null = null;
+  private activeRunId: string | null = null;
+  private factory: RunControllerFactory | null = null;
+  private subscribers = new Set<(event: AgentEvent, sequence: number) => Promise<void> | void>();
+  private starting = false;
+  private executionActive = false;
+  private executionPromise: Promise<void> | null = null;
+  private verifier: ((run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) | null = null;
+  private executorSubscription: (() => void) | null = null;
+  private expectedTabClosures = new Set<number>();
+
+  expectTabClosure(tabId: number) { this.expectedTabClosures.add(tabId); }
+  releaseExpectedTabClosure(tabId: number) { this.expectedTabClosures.delete(tabId); }
+
+  configure(factory: RunControllerFactory, verifier?: (run: TaskRun, pendingWrite: PendingWrite) => Promise<boolean>) {
+    this.factory = factory;
+    this.verifier = verifier ?? null;
+  }
+
+  subscribe(callback: (event: AgentEvent, sequence: number) => Promise<void> | void) {
+    this.subscribers.add(callback);
+    return () => this.subscribers.delete(callback);
+  }
+
+  async initialize() {
+    const active = await taskRunStore.listActiveRuns();
+    for (const run of active) {
+      let checkpoint = await taskRunStore.getCheckpoint(run.id);
+      if (!checkpoint) {
+        if (run.status === 'running' || run.status === 'queued' || run.status === 'waiting_approval' || run.status === 'waiting_user') {
+          await taskRunStore.updateStatus(run.id, 'interrupted');
+          await taskRunStore.appendEvent(run.id, 'runtime.recovery_loss', {
+            reason: 'service_worker_restart_without_checkpoint',
+            previousStatus: run.status,
+          });
+          await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+            reason: 'service_worker_restart_without_checkpoint',
+          });
+        }
+        continue;
+      }
+
+      let reason: string | undefined;
+      const now = Date.now();
+      if (checkpoint.pendingAction && checkpoint.pendingAction.expiresAt < now) {
+        reason = 'approval_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'approval.expired', {
+          nonce: checkpoint.pendingAction.nonce,
+          reason,
+        });
+        checkpoint = {
+          ...checkpoint,
+          sequence: event.sequence,
+          pendingAction: undefined,
+          approvedAction: undefined,
+          pendingWrite: checkpoint.pendingWrite?.phase === 'awaiting_approval' ? undefined : checkpoint.pendingWrite,
+        };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      } else if (checkpoint.pendingUserRequest && checkpoint.pendingUserRequest.expiresAt < now) {
+        reason = 'user_request_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'user.request_expired', {
+          nonce: checkpoint.pendingUserRequest.nonce,
+          reason,
+        });
+        checkpoint = { ...checkpoint, sequence: event.sequence, pendingUserRequest: undefined };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      } else if (checkpoint.pendingFileRead && checkpoint.pendingFileRead.expiresAt < now) {
+        reason = 'local_file_read_expired_during_worker_restart';
+        const event = await taskRunStore.appendEvent(run.id, 'file.read_expired', {
+          requestId: checkpoint.pendingFileRead.requestId,
+          reason,
+        });
+        checkpoint = { ...checkpoint, sequence: event.sequence, pendingFileRead: undefined };
+        await taskRunStore.saveCheckpoint(checkpoint);
+      }
+
+      if (run.status === 'running' || run.status === 'queued' || reason) {
+        await taskRunStore.updateStatus(run.id, 'interrupted');
+        await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+          reason: reason ?? 'service_worker_restart',
+        });
+      } else if (run.status === 'waiting_approval' && checkpoint.pendingAction) {
+        await taskRunStore.updateStatus(run.id, 'waiting_user');
+        await taskRunStore.appendEvent(run.id, 'approval.recovery_required', {
+          reason: 'service_worker_restart',
+        });
+      } else if (run.status === 'waiting_user' && !checkpoint.pendingUserRequest && !checkpoint.pendingFileRead) {
+        await taskRunStore.updateStatus(run.id, 'interrupted');
+        await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
+          reason: 'waiting_user_gate_not_recoverable',
+        });
+      }
+    }
+  }
+
+  async createAndStart(input: { runId: string; sessionId: string; goal: string; tabId: number; skillIds?: string[]; parentRunId?: string; createExecutor?: RunControllerFactory }) {
+    if (this.activeRunId) throw new Error('Another task is already active');
+    const persistedActive = await taskRunStore.listActiveRuns();
+    if (persistedActive.some(existing => existing.id !== input.runId && existing.status !== 'interrupted')) {
+      throw new Error('Another persisted task run is already active');
+    }
+    const run = await taskRunStore.createRun({
+      id: input.runId, sessionId: input.sessionId, goal: input.goal, activeTabId: input.tabId, skillIds: input.skillIds ?? [], parentRunId: input.parentRunId,
+    });
+    if (input.parentRunId) await taskRunStore.inheritContext(input.parentRunId, run.id, input.tabId);
+    if (input.createExecutor) this.factory = input.createExecutor;
+    return this.start(run);
+  }
+
+  async start(run: TaskRun) {
+    if (this.starting) throw new Error('Task runtime is starting');
+    if (this.activeRunId && this.activeRunId !== run.id) throw new Error('Another task is already active');
+    if (!this.factory) throw new Error('RunController executor factory is not configured');
+    this.starting = true;
+    try {
+      // A previous executor may still be unwinding after a tab/debugger interruption.
+      // Never replace the shared executor until that loop has actually stopped.
+      if (this.executionActive && !this.executor) {
+        await this.executionPromise?.catch(() => undefined);
+      }
+      if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
+      this.activeRunId = run.id;
+      try {
+        this.executor = await this.factory(run);
+        await this.hydrateExecutor(run);
+        this.executorSubscription?.();
+        this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+        await taskRunStore.updateStatus(run.id, 'running');
+        void this.executeDetached(run);
+        return run;
+      } catch (error) {
+        this.executorSubscription?.();
+        this.executorSubscription = null;
+        this.executor = null;
+        await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+        await taskRunStore.appendEvent(run.id, 'runtime.start_failed', { error: error instanceof Error ? error.message : String(error) }).catch(() => undefined);
+        this.activeRunId = null;
+        throw error;
+      }
+    } finally {
+      this.starting = false;
+    }
+  }
+
+  private executeWithLifecycle(
+    run: TaskRun,
+    executor: Executor | null,
+    execute: () => Promise<unknown>,
+    errorEventType: string,
+  ): Promise<void> {
+    if (this.executionActive) return this.executionPromise ?? Promise.resolve();
+    this.executionActive = true;
+
+    let execution: Promise<void>;
+    execution = (async () => {
+      try {
+        await execute();
+      } catch (error) {
+        const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
+        if (currentRun && !TERMINAL.has(currentRun.status) && currentRun.status !== 'interrupted') {
+          await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+        }
+        await taskRunStore.appendEvent(run.id, errorEventType, {
+          error: error instanceof Error ? error.message : String(error),
+        }).catch(() => undefined);
+      } finally {
+        const currentRun = await taskRunStore.getRun(run.id).catch(() => undefined);
+        // Paused and user-gated runs keep their executor while this worker stays alive.
+        if (currentRun && TERMINAL.has(currentRun.status)) {
+          if (executor) await executor.cleanup().catch(() => undefined);
+          if (this.executor === executor) await this.clearIfTerminal();
+        }
+        if (this.executionPromise === execution) {
+          this.executionPromise = null;
+          this.executionActive = false;
+        }
+      }
+    })();
+
+    this.executionPromise = execution;
+    return execution;
+  }
+
+  private executeDetached(run: TaskRun): Promise<void> {
+    const executor = this.executor;
+    return this.executeWithLifecycle(run, executor, async () => {
+      await executor?.execute();
+    }, 'runtime.exception');
+  }
+
+  private async hydrateExecutor(run: TaskRun) {
+    const checkpoint = await taskRunStore.getCheckpoint(run.id);
+    this.executor?.hydrateRuntime(checkpoint);
+  }
+
+  private async assertRecoverableTab(tabId: number) {
+    const tab = await chrome.tabs.get(tabId).catch(() => null);
+    if (!tab?.id || !tab.url) throw new Error('Task recovery target tab is unavailable');
+    return tab;
+  }
+
+  private async onEvent(run: TaskRun, event: AgentEvent) {
+    const persisted = await taskRunStore.appendEvent(run.id, event.state, {
+      actor: event.actor, data: event.data, timestamp: event.timestamp,
+    });
+    const observedTabId = await this.executor?.getActiveTabId();
+    if (observedTabId !== undefined) {
+      await taskRunStore.updateStatus(run.id, event.state === 'task.cancel' ? 'cancelled' : (await taskRunStore.getRun(run.id))?.status ?? 'running', {
+        activeTabId: observedTabId,
+      }).catch(() => undefined);
+    }
+    let nextStatus: TaskRunStatus | null = null;
+    if (event.state === 'task.start') nextStatus = 'running';
+    else if (event.state === 'task.pause') nextStatus = 'paused';
+    else if (event.state === 'task.ok') nextStatus = 'completed';
+    else if (event.state === 'task.fail') nextStatus = 'failed';
+    else if (event.state === 'task.cancel') nextStatus = 'cancelled';
+
+    if (nextStatus) await taskRunStore.updateStatus(run.id, nextStatus).catch(() => undefined);
+
+    const snapshot = this.executor?.getRuntimeSnapshot();
+    if (snapshot && nextStatus && TERMINAL.has(nextStatus)) {
+      const events = await taskRunStore.getEvents(run.id, 0, 5000).catch(() => []);
+      const lastFailure = [...events].reverse().find(item => item.type === 'task.fail' || item.type === 'step.fail');
+      const failureText = lastFailure?.payload && typeof lastFailure.payload === 'object' && 'data' in lastFailure.payload
+        ? String(((lastFailure.payload as { data?: { details?: unknown } }).data?.details ?? ''))
+        : '';
+      await taskRunStore.appendEvent(run.id, 'runtime.metrics', {
+        durationMs: snapshot.durationMs,
+        estimatedInputTokens: snapshot.estimatedInputTokens,
+        steps: snapshot.step,
+        navigator: snapshot.navigator,
+        planner: snapshot.planner,
+        userInterventions: events.filter(item => item.type === 'user.requested').length,
+        approvals: events.filter(item => item.type === 'approval.approved').length,
+        failureClass: failureText ? classifyFailure(new Error(failureText)) : undefined,
+      }).catch(() => undefined);
+    }
+    if (snapshot && !(nextStatus && TERMINAL.has(nextStatus))) {
+      const currentCheckpoint = await taskRunStore.getCheckpoint(run.id).catch(() => undefined);
+      await taskRunStore.saveCheckpoint({
+        runId: run.id,
+        sequence: persisted.sequence,
+        plan: snapshot.plan,
+        completedStepIds: snapshot.plan.filter(s => s.status === 'completed').map(s => s.id),
+        memory: snapshot.memory,
+        evidenceIds: (await taskRunStore.getEvidence(run.id, 200)).map(e => e.id),
+        activeTabId: observedTabId ?? run.activeTabId,
+        pendingWrite: snapshot.pendingWrite,
+        approvedAction: snapshot.approvedAction ?? currentCheckpoint?.approvedAction,
+        pendingAction: currentCheckpoint?.pendingAction,
+        pendingUserRequest: currentCheckpoint?.pendingUserRequest,
+        pendingFileRead: currentCheckpoint?.pendingFileRead,
+        nSteps: snapshot.step,
+        replanCount: (this.executor as Executor).getRuntimeSnapshot().replanCount,
+        startedAt: snapshot.startedAt,
+        finalAnswer: snapshot.finalAnswer,
+      }).catch(async error => {
+        if (error instanceof Error && error.message === 'Stale checkpoint') return;
+
+        await taskRunStore.updateStatus(run.id, 'paused').catch(() => undefined);
+        await taskRunStore.appendEvent(run.id, 'runtime.checkpoint_failed', { error: String(error) }).catch(() => undefined);
+        await this.executor?.pause().catch(() => undefined);
+      });
+    }
+    for (const subscriber of this.subscribers) await subscriber(event, persisted.sequence);
+  }
+
+  async continueWithFollowUp(runId: string, task: string) {
+    const run = await taskRunStore.getRun(runId);
+    if (!run) throw new Error('Unknown task run');
+    if (this.activeRunId && this.activeRunId !== runId) throw new Error('Another task is already active');
+
+    if (run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled') {
+      throw new Error('终态任务不能直接追加 Follow-up，请创建新的任务运行');
+    }
+
+    if (run.status === 'interrupted' && !this.executor) {
+      if (!this.factory) throw new Error('RunController executor factory is not configured');
+      if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
+      const checkpoint = await taskRunStore.getCheckpoint(run.id);
+      if (checkpoint?.pendingAction || checkpoint?.pendingUserRequest) {
+        throw new Error('该任务仍在等待审批或用户输入，不能直接追加 Follow-up');
+      }
+      if (checkpoint?.pendingWrite) {
+        const verified = this.verifier ? await this.verifier(run, checkpoint.pendingWrite) : false;
+        if (!verified) throw new Error('任务存在未确认的浏览器写操作，请先恢复并核验');
+        const event = await taskRunStore.appendEvent(run.id, 'runtime.recovery_verified', { toolName: checkpoint.pendingWrite.toolName });
+        await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined });
+      }
+      this.activeRunId = run.id;
+      this.executor = await this.factory(run);
+      await this.hydrateExecutor(run);
+    }
+
+    if (!this.executor) {
+      if (!this.factory) throw new Error('RunController executor factory is not configured');
+      if (run.activeTabId !== undefined) await this.assertRecoverableTab(run.activeTabId);
+      this.activeRunId = run.id;
+      this.executor = await this.factory(run);
+      await this.hydrateExecutor(run);
+    }
+
+    if (run.status === 'paused') await this.executor.resume();
+    this.executor.addFollowUpTask(task);
+    await taskRunStore.appendEvent(run.id, 'task.follow_up', { task });
+    await taskRunStore.updateStatus(run.id, 'running');
+    this.executorSubscription?.();
+    this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    if (!this.executionActive) void this.executeDetached(run);
+  }
+
+  async startReplay(runId: string, historySessionId: string, task: string, tabId: number) {
+    if (this.activeRunId) throw new Error('Another task is already active');
+    const run = await taskRunStore.createRun({ id: runId, sessionId: historySessionId, goal: task, activeTabId: tabId });
+    if (!this.factory) throw new Error('RunController executor factory is not configured');
+    await this.assertRecoverableTab(tabId);
+    this.activeRunId = run.id;
+    this.executor = await this.factory(run);
+    this.executorSubscription?.();
+    this.executorSubscription = this.executor.subscribeExecutionEvents(event => this.onEvent(run, event));
+    await taskRunStore.updateStatus(run.id, 'running');
+    try {
+      void this.executeReplayDetached(run, historySessionId);
+    } catch {
+      await taskRunStore.updateStatus(run.id, 'failed').catch(() => undefined);
+      throw new Error('Failed to start replay');
+    }
+  }
+
+  private executeReplayDetached(run: TaskRun, historySessionId: string): Promise<void> {
+    const executor = this.executor;
+    return this.executeWithLifecycle(run, executor, async () => {
+      await executor?.replayHistory(historySessionId);
+    }, 'runtime.replay_exception');
+  }
+
+  private async detachExecutorForRecovery() {
+    const executor = this.executor;
+    this.executorSubscription?.();
+    this.executorSubscription = null;
+    this.executor = null;
+    if (!executor) return;
+    // Abort model/browser waits after unsubscribing so the old loop cannot
+    // overwrite the durable interrupted state with a stale cancellation event.
+    await executor.cancel().catch(() => undefined);
+    await executor.cleanup().catch(() => undefined);
+  }
+
+  async handleTabClosed(tabId: number) {
+    const expected = this.expectedTabClosures.delete(tabId);
+    const runId = this.activeRunId;
+    if (!runId) return;
+    const run = await taskRunStore.getRun(runId);
+    if (!run || !ACTIVE.has(run.status)) return;
+
+    if (expected) {
+      await taskRunStore.appendEvent(runId, 'runtime.expected_tab_closed', {
+        tabId,
+        wasActiveTab: run.activeTabId === tabId,
+      });
+      if (run.activeTabId !== tabId) return;
+
+      const nextTabId = await this.executor?.switchToSafeActiveTabAfterClose(tabId).catch(() => undefined);
+      if (nextTabId !== undefined) {
+        await taskRunStore.updateStatus(runId, run.status, { activeTabId: nextTabId }).catch(() => undefined);
+        return;
+      }
+      await taskRunStore.updateStatus(runId, 'failed').catch(() => undefined);
+      await taskRunStore.appendEvent(runId, 'runtime.no_safe_tab_after_close', {
+        tabId,
+        error: '关闭操作后没有可供继续执行且符合 URL 策略的标签页',
+      });
+      await this.detachExecutorForRecovery();
+      return;
+    }
+
+    if (run.activeTabId !== tabId) return;
+    await taskRunStore.updateStatus(runId, 'interrupted');
+    await taskRunStore.appendEvent(runId, 'runtime.tab_closed', { tabId });
+    await this.detachExecutorForRecovery();
+  }
+
+  async handleDebuggerDetached(tabId: number, reason: string) {
+    const runId = this.activeRunId;
+    if (!runId) return;
+    const run = await taskRunStore.getRun(runId);
+    if (!run || run.activeTabId !== tabId || !ACTIVE.has(run.status)) return;
+    if (reason === 'canceled_by_user') {
+      await this.cancel();
+      return;
+    }
+    await taskRunStore.updateStatus(runId, 'interrupted');
+    await taskRunStore.appendEvent(runId, 'runtime.debugger_detached', { tabId, reason });
+    await this.detachExecutorForRecovery();
+  }
+
+  async pause(runId?: string) {
+    const targetId = this.activeRunId ?? runId;
+    if (!targetId) throw new Error('No active task');
+    if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
+    const run = await taskRunStore.getRun(targetId);
+    if (!run) throw new Error('Unknown task run');
+    if (run.status === 'waiting_approval' || run.status === 'waiting_user') {
+      throw new Error('任务正在等待审批或用户输入；请先完成该交互再暂停');
+    }
+    if (run.status !== 'running') throw new Error('只有运行中的任务可以暂停');
+    if (this.executor && this.activeRunId === targetId) await this.executor.pause();
+    await taskRunStore.appendEvent(targetId, 'task.pause', { reason: 'user_command' });
+    await taskRunStore.updateStatus(targetId, 'paused');
+  }
+
+  async resume(runId?: string) {
+    if (this.executor) {
+      const targetId = this.activeRunId;
+      if (runId && targetId && runId !== targetId) throw new Error('Task run mismatch');
+      if (targetId) {
+        const run = await taskRunStore.getRun(targetId);
+        if (!run) throw new Error('Unknown task run');
+        const loopWasActive = this.executionActive;
+        const pendingWrite = this.executor.getPendingWrite();
+        if (pendingWrite) {
+          const verified = this.verifier ? await this.verifier(run, pendingWrite) : false;
+          if (!verified) {
+            await taskRunStore.appendEvent(targetId, 'runtime.recovery_needs_verification', {
+              toolName: pendingWrite.toolName,
+              tabId: pendingWrite.tabId,
+              url: pendingWrite.url,
+            });
+            throw new Error('未确认的浏览器写操作必须先完成后置条件核验');
+          }
+          const event = await taskRunStore.appendEvent(targetId, 'runtime.recovery_verified', {
+            toolName: pendingWrite.toolName,
+            parameterHash: pendingWrite.parameterHash,
+          });
+          this.executor.clearPendingWrite();
+          const checkpoint = await taskRunStore.getCheckpoint(targetId);
+          if (checkpoint) await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined });
+        }
+        await this.executor.resume();
+        await taskRunStore.appendEvent(targetId, 'task.resume', { reason: 'user_command' });
+        await taskRunStore.updateStatus(targetId, 'running');
+        if (!loopWasActive) void this.executeDetached(run);
+      }
+      return;
+    }
+    if (runId) { await this.recover(runId); return; }
+    throw new Error('No recoverable task');
+  }
+
+  async cancel(runId?: string) {
+    const targetId = this.activeRunId ?? runId;
+    if (!targetId) throw new Error('No active task');
+    if (runId && this.activeRunId && runId !== this.activeRunId) throw new Error('Task run mismatch');
+    if (this.executor && this.activeRunId === targetId) await this.executor.cancel();
+    const event = await taskRunStore.appendEvent(targetId, 'task.cancel', { reason: 'user_command' }).catch(() => undefined);
+    const checkpoint = await taskRunStore.getCheckpoint(targetId).catch(() => undefined);
+    if (event && checkpoint) {
+      await taskRunStore.saveCheckpoint({
+        ...checkpoint,
+        sequence: event.sequence,
+        pendingAction: undefined,
+        approvedAction: undefined,
+        pendingWrite: undefined,
+        pendingUserRequest: undefined,
+        pendingFileRead: undefined,
+      }).catch(() => undefined);
+    }
+    await taskRunStore.updateStatus(targetId, 'cancelled').catch(() => undefined);
+    if (this.activeRunId === targetId && !this.executor) await this.clearIfTerminal();
+  }
+
+  async recover(runId: string) {
+    const run = await taskRunStore.getRun(runId);
+    if (!run) throw new Error('Unknown task run');
+    if (!ACTIVE.has(run.status) || run.status === 'queued') throw new Error('Run is not recoverable');
+    if (this.activeRunId && this.activeRunId !== run.id) throw new Error('Another task is already active');
+    if (!this.factory) throw new Error('RunController executor factory is not configured');
+    const checkpoint = await taskRunStore.getCheckpoint(run.id);
+    if (checkpoint?.pendingAction) {
+      throw new Error('Task has a pending approval; re-approve the exact action before recovery');
+    }
+    if (checkpoint?.pendingUserRequest) {
+      throw new Error('Task is waiting for user input; answer the persisted question before recovery');
+    }
+    if (checkpoint?.pendingWrite?.phase === 'awaiting_approval') {
+      const approved = checkpoint.approvedAction;
+      const approvalMatchesWrite = Boolean(
+        approved &&
+        approved.toolName === checkpoint.pendingWrite.toolName &&
+        approved.parameterHash === checkpoint.pendingWrite.parameterHash &&
+        approved.expiresAt >= Date.now(),
+      );
+      if (!approvalMatchesWrite) {
+        // The pending action never crossed the approval gate; it is safe to
+        // clear it without postcondition verification because the tool did not run.
+        const event = await taskRunStore.appendEvent(run.id, 'runtime.write_not_executed', {
+          toolName: checkpoint.pendingWrite.toolName,
+          parameterHash: checkpoint.pendingWrite.parameterHash,
+          reason: 'approval_not_consumed',
+        });
+        await taskRunStore.saveCheckpoint({
+          ...checkpoint,
+          sequence: event.sequence,
+          pendingWrite: undefined,
+          approvedAction: undefined,
+        });
+      }
+    } else if (checkpoint?.pendingWrite) {
+      const verified = this.verifier ? await this.verifier(run, checkpoint.pendingWrite) : false;
+      if (!verified) {
+        await taskRunStore.appendEvent(run.id, 'runtime.recovery_needs_verification', {
+          toolName: checkpoint.pendingWrite.toolName,
+          tabId: checkpoint.pendingWrite.tabId,
+          url: checkpoint.pendingWrite.url,
+        });
+        throw new Error('Task has an unknown browser write; verify its postcondition before recovery');
+      }
+      const event = await taskRunStore.appendEvent(run.id, 'runtime.recovery_verified', {
+        toolName: checkpoint.pendingWrite.toolName,
+      });
+      await taskRunStore.saveCheckpoint({
+        ...checkpoint,
+        sequence: event.sequence,
+        pendingWrite: undefined,
+      });
+    }
+    await this.assertRecoverableTab(run.activeTabId ?? -1);
+    return this.start({ ...run, status: 'running' });
+  }
+
+  async snapshot(runId: string, afterSequence = 0) { return taskRunStore.getSnapshot(runId, afterSequence); }
+  getExecutor() { return this.executor; }
+  getRunId() { return this.activeRunId; }
+
+  async clearIfTerminal() {
+    if (!this.activeRunId) return;
+    const run = await taskRunStore.getRun(this.activeRunId);
+    if (run && TERMINAL.has(run.status)) {
+      this.executorSubscription?.();
+      this.executorSubscription = null;
+      this.executor = null;
+      this.activeRunId = null;
+    }
+  }
+}
+
+export const runController = new RunController();

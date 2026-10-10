@@ -139,7 +139,6 @@ function NavigatorGroup({
   isDarkMode: boolean;
 }) {
   const [open, setOpen] = useState(true);
-  const allFailed = items.every(it => it.failed);
   return (
     <div
       className={`rounded-lg border p-2 ${

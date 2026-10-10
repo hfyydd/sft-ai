@@ -29,6 +29,16 @@ import { convertZodToJsonSchema, repairJsonString } from '@src/background/utils'
 import { HistoryTreeProcessor } from '@src/background/browser/dom/history/service';
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
+import { taskRunStore } from '@extension/storage';
+import { classifyActionRisk, requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
+
+const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url','go_back']);
+
+async function hashActionArgs(value: unknown) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+}
 
 const logger = createLogger('NavigatorAgent');
 
@@ -384,9 +394,94 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           return results;
         }
 
+        const policy = this.context.toolPolicy?.decide(actionName);
+        if (policy && !policy.allowed) {
+          const denied = `Tool ${actionName} blocked by policy: ${policy.reason}`;
+          await taskRunStore.appendEvent(this.context.taskId, 'policy.tool_denied', {
+            toolName: actionName,
+            reason: policy.reason,
+            step: this.context.nSteps,
+          }).catch(() => undefined);
+          this.context.emitEvent(Actors.NAVIGATOR, ExecutionState.ACT_FAIL, denied);
+          results.push(new ActionResult({ error: denied, includeInMemory: true }));
+          // Do not execute any later tool calls from the same model response after a policy denial.
+          break;
+        }
+
         const actionInstance = this.actionRegistry.getAction(actionName);
         if (actionInstance === undefined) {
           throw new Error(`Action ${actionName} not exists`);
+        }
+        const parsedActionArgs = actionInstance.schema.schema.safeParse(actionArgs);
+        const normalizedActionArgs = parsedActionArgs.success ? parsedActionArgs.data : actionArgs;
+
+        // A restored one-time approval is valid only for the exact next tool,
+        // arguments and source page. Invalidate it before executing even a
+        // read-only replacement action; otherwise it could linger until reused.
+        if (this.context.approvedAction) {
+          const approved = this.context.approvedAction;
+          const comparableArgs = normalizedActionArgs;
+          const candidateHash = await hashActionArgs(normalizedActionArgs);
+          let currentTabId: number | undefined;
+          let currentUrl = '';
+          try {
+            if (
+              actionName === 'close_tab' &&
+              comparableArgs && typeof comparableArgs === 'object' &&
+              'tab_id' in comparableArgs && typeof (comparableArgs as { tab_id: unknown }).tab_id === 'number'
+            ) {
+              currentTabId = Number((comparableArgs as { tab_id: number }).tab_id);
+              currentUrl = (await chrome.tabs.get(currentTabId)).url || '';
+            } else {
+              const currentPage = await browserContext.getCurrentPage();
+              currentTabId = currentPage.tabId;
+              currentUrl = currentPage.url();
+            }
+          } catch {
+            // If source/target context cannot be observed, the approval must be invalidated.
+          }
+          let targetUrl: string | undefined;
+          if (comparableArgs && typeof comparableArgs === 'object' && 'url' in comparableArgs) {
+            targetUrl = String((comparableArgs as { url: unknown }).url);
+          } else if (
+            actionName === 'click_element' &&
+            comparableArgs && typeof comparableArgs === 'object' &&
+            'index' in comparableArgs && typeof (comparableArgs as { index: unknown }).index === 'number'
+          ) {
+            const node = browserState.selectorMap.get((comparableArgs as { index: number }).index);
+            const href = node?.attributes?.href;
+            if (href) {
+              try { targetUrl = new URL(href, currentUrl).href; } catch { targetUrl = undefined; }
+            }
+          }
+          const matches =
+            approved.toolName === actionName &&
+            approved.parameterHash === candidateHash &&
+            approved.tabId === currentTabId &&
+            (approved.url || '') === currentUrl &&
+            (approved.targetUrl || '') === (targetUrl || '');
+          if (!matches) {
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId).catch(() => undefined);
+            const invalidated = await taskRunStore.appendEvent(this.context.taskId, 'approval.invalidated', {
+              nonce: approved.nonce,
+              toolName: approved.toolName,
+              parameterHash: approved.parameterHash,
+              reason: 'next_tool_or_source_context_mismatch',
+            }).catch(() => undefined);
+            if (checkpoint && invalidated) {
+              await taskRunStore.saveCheckpoint({
+                ...checkpoint,
+                sequence: invalidated.sequence,
+                approvedAction: undefined,
+                pendingWrite:
+                  checkpoint.pendingWrite?.phase === 'awaiting_approval'
+                    ? undefined
+                    : checkpoint.pendingWrite,
+              }).catch(() => undefined);
+            }
+            if (this.context.pendingWrite?.phase === 'awaiting_approval') this.context.pendingWrite = undefined;
+            this.context.approvedAction = undefined;
+          }
         }
 
         const indexArg = actionInstance.getIndexArg(actionArgs);
@@ -407,11 +502,197 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           }
         }
 
+        if (PENDING_WRITE_TOOLS.has(actionName)) {
+          const pendingWrite: NonNullable<typeof this.context.pendingWrite> = {
+            toolName: actionName,
+            parameterHash: await hashActionArgs(normalizedActionArgs),
+            tabId: actionName === 'close_tab' && actionArgs && typeof actionArgs === 'object' && 'tab_id' in actionArgs
+              ? Number(actionArgs.tab_id)
+              : browserState.tabId,
+            url: browserState.url,
+            expectedUrl:
+              actionName === 'go_to_url' && actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs
+                ? String(actionArgs.url)
+                : actionName === 'open_tab' && actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs
+                  ? String(actionArgs.url)
+                  : undefined,
+            startedAt: Date.now(),
+            phase: 'executing' as const,
+          };
+          if (actionArgs && typeof actionArgs === 'object' && 'index' in actionArgs && typeof actionArgs.index === 'number') {
+            pendingWrite.index = actionArgs.index;
+          }
+          if (
+            actionArgs &&
+            typeof actionArgs === 'object' &&
+            'text' in actionArgs &&
+            actionArgs.text !== null &&
+            typeof actionArgs.text === 'string' &&
+            ['input_text', 'select_dropdown_option'].includes(actionName)
+          ) {
+            pendingWrite.expectedValueHash = await hashActionArgs(actionArgs.text);
+          }
+          this.context.pendingWrite = pendingWrite;
+        }
+
+        const actionParameterHash = await hashActionArgs(normalizedActionArgs);
+        let riskText = '';
+        let actionTargetUrl: string | undefined;
+        let crossDomainLink = false;
+        let crossDomainNavigation = false;
+        let isNativeSubmitControl = false;
+        let isDownloadLink = false;
+        if (actionName === 'go_to_url' && normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs) {
+          try {
+            crossDomainNavigation =
+              new URL(String((normalizedActionArgs as { url: unknown }).url)).hostname !== new URL(browserState.url).hostname;
+          } catch {
+            crossDomainNavigation = true;
+          }
+        }
+        if (actionName === 'click_element' && indexArg !== null) {
+          const targetNode = browserState.selectorMap.get(indexArg);
+          if (targetNode) {
+            riskText = targetNode.getAllTextTillNextClickableElement(3) + ' ' + JSON.stringify(targetNode.attributes || {});
+            const currentPage = await browserContext.getCurrentPage();
+            isNativeSubmitControl = await currentPage.isFormSubmitControl(targetNode).catch(() => false);
+            isDownloadLink = await currentPage.isDownloadLink(targetNode).catch(() => Boolean(targetNode.attributes?.download));
+            if (isNativeSubmitControl) riskText += ' native-form-submit';
+            if (isDownloadLink) riskText += ' file-download';
+            const href = targetNode.attributes?.href;
+            if (href) {
+              try {
+                actionTargetUrl = new URL(href, browserState.url).href;
+                crossDomainLink = new URL(actionTargetUrl).hostname !== new URL(browserState.url).hostname;
+              } catch {
+                crossDomainLink = false;
+              }
+            }
+          }
+        }
+        const normalizedRecord = normalizedActionArgs && typeof normalizedActionArgs === 'object'
+          ? normalizedActionArgs as Record<string, unknown>
+          : {};
+        const keys = typeof normalizedRecord.keys === 'string' ? normalizedRecord.keys : '';
+        const requiresConfirmation =
+          policyRequiresApproval(actionName, normalizedActionArgs, riskText) ||
+          ['close_tab', 'open_tab', 'search_google'].includes(actionName) ||
+          crossDomainLink ||
+          crossDomainNavigation ||
+          isNativeSubmitControl ||
+          isDownloadLink ||
+          (actionName === 'send_keys' && /enter|return/i.test(keys));
+        const targetUrl = normalizedRecord && typeof normalizedRecord.url === 'string'
+          ? normalizedRecord.url
+          : actionTargetUrl;
+        await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
+          toolName: actionName,
+          parameterHash: actionParameterHash,
+          risk: classifyActionRisk(actionName, normalizedActionArgs, riskText),
+          requiresApproval: requiresConfirmation,
+          sourceUrl: browserState.url,
+          targetUrl,
+          step: this.context.nSteps,
+        }).catch(() => undefined);
+
+        let pendingWriteCreated = false;
+        if (PENDING_WRITE_TOOLS.has(actionName)) {
+          const currentPage = await browserContext.getCurrentPage();
+          const expectedUrl =
+            actionArgs && typeof actionArgs === 'object' && 'url' in actionArgs ? String(actionArgs.url) : undefined;
+          const expectedValue =
+            actionArgs && typeof actionArgs === 'object' && 'text' in actionArgs ? String(actionArgs.text) : undefined;
+          const beforeObservationSignature =
+            actionName === 'send_keys' || actionName === 'go_back'
+              ? await currentPage.getObservationSignature()
+              : undefined;
+          const formFields = actionName === 'fill_form' && parsedActionArgs.success
+            ? (normalizedActionArgs as { fields?: Array<{ index: number; value: string }> }).fields
+            : undefined;
+          const expectedFieldHashes = Array.isArray(formFields)
+            ? await Promise.all(formFields.map(async field => ({ index: field.index, valueHash: await hashActionArgs(field.value) })))
+            : undefined;
+          const pendingWrite = {
+            toolName: actionName,
+            parameterHash: actionParameterHash,
+            tabId:
+              actionName === 'close_tab' && actionArgs && typeof actionArgs === 'object' && 'tab_id' in actionArgs
+                ? Number(actionArgs.tab_id)
+                : currentPage.tabId,
+            url: currentPage.url(),
+            expectedUrl,
+            startedAt: Date.now(),
+            index: indexArg ?? undefined,
+            expectedValueHash: expectedValue ? await hashActionArgs(expectedValue) : undefined,
+            expectedFieldHashes,
+            beforeObservationSignature,
+            phase: 'executing' as const,
+          };
+          this.context.pendingWrite = pendingWrite;
+          const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+          const event = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_started', pendingWrite);
+          await taskRunStore.saveCheckpoint({
+            runId: this.context.taskId,
+            sequence: event.sequence,
+            plan: this.context.plan,
+            completedStepIds: this.context.plan.filter(step => step.status === 'completed').map(step => step.id),
+            memory: this.context.taskMemory.getFacts(),
+            evidenceIds: (await taskRunStore.getEvidence(this.context.taskId, 200)).map(item => item.id),
+            activeTabId: currentPage.tabId,
+            pendingWrite,
+            pendingAction: checkpoint?.pendingAction,
+            approvedAction: this.context.approvedAction,
+            pendingUserRequest: checkpoint?.pendingUserRequest,
+            pendingFileRead: checkpoint?.pendingFileRead,
+          });
+          pendingWriteCreated = true;
+        }
+
         const result = await actionInstance.call(actionArgs);
         if (result === undefined) {
           throw new Error(`Action ${actionName} returned undefined`);
         }
 
+        if (pendingWriteCreated) {
+          if (result.error) {
+            if (result.sideEffectUnknown) {
+              await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+                toolName: actionName,
+                parameterHash: actionParameterHash,
+                error: result.error,
+              }).catch(() => undefined);
+              await this.context.pause();
+            } else {
+              const resolved = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_not_executed', {
+                toolName: actionName,
+                parameterHash: actionParameterHash,
+                reason: result.error,
+              }).catch(() => undefined);
+              this.context.pendingWrite = undefined;
+              const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+              if (checkpoint && resolved) {
+                await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: resolved.sequence, pendingWrite: undefined });
+              }
+            }
+          } else {
+            const completed = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_completed', {
+              toolName: actionName,
+              parameterHash: actionParameterHash,
+            });
+            this.context.pendingWrite = undefined;
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId);
+            if (checkpoint) {
+              await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: completed.sequence, pendingWrite: undefined });
+            }
+          }
+        }
+        await taskRunStore.appendEvent(this.context.taskId, 'tool.completed', {
+          toolName: actionName,
+          parameterHash: actionParameterHash,
+          success: result.success !== false && !result.error,
+          step: this.context.nSteps,
+        }).catch(() => undefined);
+ 
         // if the action has an index argument, record the interacted element to the result
         if (indexArg !== null) {
           const domElement = browserState.selectorMap.get(indexArg);
@@ -424,6 +705,13 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
         results.push(result);
 
+        // A rejected/expired approval terminates this run rather than letting the planner
+        // reinterpret rejection as an ordinary tool failure and retry the same side effect.
+        if (result.error && /approval was not granted|not approved/i.test(result.error)) {
+          await this.context.stop();
+          return results;
+        }
+
         // check if the task is paused or stopped
         if (this.context.paused || this.context.stopped) {
           return results;
@@ -431,10 +719,50 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         // TODO: wait for 1 second for now, need to optimize this to avoid unnecessary waiting
         await new Promise(resolve => setTimeout(resolve, 1000));
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         if (error instanceof URLNotAllowedError) {
+          const deniedUrl = errorMessage.match(/URL:\s*(\S+)\s+is not allowed/i)?.[1]
+            ?? (normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs
+              ? String((normalizedActionArgs as { url: unknown }).url)
+              : undefined);
+          await taskRunStore.appendEvent(this.context.taskId, 'navigation.denied', {
+            toolName: actionName,
+            sourceUrl: browserState.url,
+            targetUrl: deniedUrl,
+            error: errorMessage,
+          }).catch(() => undefined);
+
+          const navigationOnly = ['go_to_url', 'open_tab', 'go_back', 'search_google'].includes(actionName);
+          if (navigationOnly && this.context.pendingWrite?.toolName === actionName) {
+            const event = await taskRunStore.appendEvent(this.context.taskId, 'runtime.write_not_executed', {
+              toolName: actionName,
+              parameterHash: this.context.pendingWrite.parameterHash,
+              reason: 'url_policy_denied_before_action',
+            }).catch(() => undefined);
+            const checkpoint = await taskRunStore.getCheckpoint(this.context.taskId).catch(() => undefined);
+            if (event && checkpoint?.pendingWrite?.parameterHash === this.context.pendingWrite.parameterHash) {
+              await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingWrite: undefined }).catch(() => undefined);
+            }
+            this.context.pendingWrite = undefined;
+          } else if (PENDING_WRITE_TOOLS.has(actionName) && this.context.pendingWrite) {
+            await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+              toolName: actionName,
+              parameterHash: this.context.pendingWrite.parameterHash,
+              error: errorMessage,
+              reason: 'navigation_rejected_after_write_attempt',
+            }).catch(() => undefined);
+            await this.context.pause();
+          }
           throw error;
         }
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (PENDING_WRITE_TOOLS.has(actionName) && this.context.pendingWrite) {
+          await taskRunStore.appendEvent(this.context.taskId, 'runtime.unknown_side_effect', {
+            toolName: actionName,
+            parameterHash: this.context.pendingWrite.parameterHash,
+            error: errorMessage,
+          }).catch(() => undefined);
+          await this.context.pause();
+        }
         logger.error(
           'doAction error',
           actionName,
@@ -452,6 +780,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             error: errorMessage,
             isDone: false,
             includeInMemory: true,
+            sideEffectUnknown: PENDING_WRITE_TOOLS.has(actionName),
           }),
         );
       }

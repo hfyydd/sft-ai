@@ -1,3 +1,4 @@
+import { taskRunStore } from '../taskRuns';
 import { createStorage } from '../base/base';
 import { StorageEnum } from '../base/enums';
 import type {
@@ -72,8 +73,11 @@ export function createChatHistoryStorage(): ChatHistoryStorage {
       for (const sessionMeta of sessionsMeta) {
         const messagesStorage = getSessionMessagesStorage(sessionMeta.id);
         await messagesStorage.set([]);
+        const historyStorage = getSessionAgentStepHistoryStorage(sessionMeta.id);
+        await historyStorage.set({ task: '', history: '', timestamp: 0 });
       }
       await chatSessionsMetaStorage.set([]);
+      await taskRunStore.removeAllRuns();
     },
 
     // Get session metadata without messages (for UI listing)
@@ -160,6 +164,11 @@ export function createChatHistoryStorage(): ChatHistoryStorage {
       // Remove the session's messages
       const messagesStorage = getSessionMessagesStorage(sessionId);
       await messagesStorage.set([]);
+      const historyStorage = getSessionAgentStepHistoryStorage(sessionId);
+      await historyStorage.set({ task: '', history: '', timestamp: 0 });
+      // Keep durable task runtime data in sync with chat history deletion.
+      const runs = await taskRunStore.listBySession(sessionId);
+      await Promise.all(runs.filter(run => run.sessionId === sessionId).map(run => taskRunStore.removeRun(run.id)));
     },
 
     addMessage: async (sessionId: string, message: Message): Promise<ChatMessage> => {

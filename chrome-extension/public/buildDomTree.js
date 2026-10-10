@@ -1,3 +1,4 @@
+/* global getEventListeners */
 window.buildDomTree = (
   args = {
     showHighlightElements: true,
@@ -8,8 +9,7 @@ window.buildDomTree = (
     startHighlightIndex: 0,
   },
 ) => {
-  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId, debugMode } =
-    args;
+  const { showHighlightElements, focusHighlightIndex, viewportExpansion, startHighlightIndex, startId } = args;
   // 元素高亮框已按需求移除:无条件不绘制(索引定位不依赖高亮)
   const doHighlightElements = false;
 

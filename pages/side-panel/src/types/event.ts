@@ -70,3 +70,13 @@ export class AgentEvent {
 
 // The type of callback for event subscribers
 export type EventCallback = (event: AgentEvent) => Promise<void>;
+
+export interface DurableRunEvent {
+  id: string;
+  runId: string;
+  sequence: number;
+  type: string;
+  timestamp: number;
+  payload: unknown;
+}
+

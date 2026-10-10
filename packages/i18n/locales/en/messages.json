@@ -1001,5 +1001,54 @@
   },
   "act_readPage_pdf": {
     "message": "正在解析 PDF 文本层…"
-  }
+  },
+  "task_plan": {
+    "message": "Task plan"
+  },
+  "task_timeline": {
+    "message": "Task timeline"
+  },
+  "task_evidence": {
+    "message": "Evidence"
+  },
+  "task_status": {
+    "message": "Status"
+  },
+  "task_pause": {
+    "message": "Pause"
+  },
+  "task_resume": {
+    "message": "Resume"
+  },
+  "task_cancel": {
+    "message": "Cancel"
+  },
+  "task_approval_needed": {
+    "message": "Approval required"
+  },
+  "task_approve_once": {
+    "message": "Approve once"
+  },
+  "task_reject": {
+    "message": "Reject"
+  },
+  "task_user_input_needed": {
+    "message": "Your input is required"
+  },
+  "task_submit_answer": {
+    "message": "Submit answer"
+  },
+  "task_load_earlier": {
+    "message": "Load earlier events"
+  },
+  "task_manual_skills": {
+    "message": "Skills for this task"
+  },
+  "task_no_evidence": {
+    "message": "No persisted evidence; please verify manually."
+  },
+  "options_general_taskRunRetentionDays": {"message":"Task run retention (days)"},
+  "options_general_taskRunRetentionDays_desc": {"message":"Finished task records older than this will be removed."},
+  "options_general_taskRunMaxTerminalRuns": {"message":"Maximum finished task records"},
+  "options_general_taskRunMaxTerminalRuns_desc": {"message":"Keep at most this many finished task runs in IndexedDB."}
 }

@@ -10,7 +10,7 @@ export class EventManager {
     this._subscribers = new Map();
   }
 
-  subscribe(eventType: EventType, callback: EventCallback): void {
+  subscribe(eventType: EventType, callback: EventCallback): () => void {
     if (!this._subscribers.has(eventType)) {
       this._subscribers.set(eventType, []);
     }
@@ -19,6 +19,7 @@ export class EventManager {
     if (callbacks && !callbacks.includes(callback)) {
       callbacks.push(callback);
     }
+    return () => this.unsubscribe(eventType, callback);
   }
 
   unsubscribe(eventType: EventType, callback: EventCallback): void {

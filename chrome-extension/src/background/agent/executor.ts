@@ -25,6 +25,12 @@ import { chatHistoryStore } from '@extension/storage/lib/chat';
 import type { AgentStepHistory } from './history';
 import type { GeneralSettingsConfig } from '@extension/storage';
 import { analytics } from '../services/analytics';
+import type { ToolPolicy } from '../services/toolPolicy';
+import { taskRunStore } from '@extension/storage';
+import type { TaskCheckpoint, PlanStep } from '@extension/storage';
+import { classifyFailure, recoveryAdvice } from './recovery';
+import { advancePlan, mergePlan, normalizePlanSteps } from './plan';
+import { TaskVerifier } from './roles/verifier';
 
 const logger = createLogger('Executor');
 
@@ -33,8 +39,11 @@ export interface ExecutorExtraArgs {
   extractorLLM?: BaseChatModel;
   agentOptions?: Partial<AgentOptions>;
   generalSettings?: GeneralSettingsConfig;
-  /** System-prompt fragment built from enabled 'always' skills; appended to planner & navigator prompts. */
+  /** System-prompt fragment built from enabled and selected skills. */
   skillsInstructions?: string;
+  /** Chat session ID used for replay history; taskId remains the durable run ID. */
+  historySessionId?: string;
+  toolPolicy?: ToolPolicy;
 }
 
 export class Executor {
@@ -44,6 +53,8 @@ export class Executor {
   private readonly plannerPrompt: PlannerPrompt;
   private readonly navigatorPrompt: NavigatorPrompt;
   private readonly generalSettings: GeneralSettingsConfig | undefined;
+  private readonly historySessionId: string;
+  private readonly taskVerifier: TaskVerifier;
   private tasks: string[] = [];
   constructor(
     task: string,
@@ -63,9 +74,12 @@ export class Executor {
       messageManager,
       eventManager,
       extraArgs?.agentOptions ?? {},
+      extraArgs?.toolPolicy,
     );
 
     this.generalSettings = extraArgs?.generalSettings;
+    this.historySessionId = extraArgs?.historySessionId ?? taskId;
+    this.taskVerifier = new TaskVerifier(plannerLLM);
     this.tasks.push(task);
     const skillsInstructions = extraArgs?.skillsInstructions?.trim() ?? '';
     this.navigatorPrompt = new NavigatorPrompt(context.options.maxActionsPerStep, skillsInstructions);
@@ -92,8 +106,71 @@ export class Executor {
     this.context.messageManager.initTaskMessages(this.navigatorPrompt.getSystemMessage(), task);
   }
 
-  subscribeExecutionEvents(callback: EventCallback): void {
-    this.context.eventManager.subscribe(EventType.EXECUTION, callback);
+  hydrateRuntime(checkpoint?: TaskCheckpoint) {
+    if (!checkpoint) return;
+    this.context.plan = [...checkpoint.plan];
+    this.context.taskMemory.loadFacts(checkpoint.memory);
+    this.context.approvedAction = checkpoint.approvedAction;
+    this.context.pendingWrite = checkpoint.pendingWrite;
+    if (checkpoint.nSteps !== undefined) this.context.nSteps = checkpoint.nSteps;
+    if (checkpoint.replanCount !== undefined) this.context.replanCount = checkpoint.replanCount;
+    if (checkpoint.startedAt !== undefined) this.context.startedAt = checkpoint.startedAt;
+    if (checkpoint.finalAnswer !== undefined) this.context.finalAnswer = checkpoint.finalAnswer;
+  }
+
+  getPlan(): PlanStep[] { return this.context.plan.map(step => ({ ...step, evidenceIds: [...step.evidenceIds] })); }
+  async switchToSafeActiveTabAfterClose(closedTabId: number): Promise<number | undefined> {
+    const [activeTabs, allTabs] = await Promise.all([
+      chrome.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []),
+      chrome.tabs.query({ lastFocusedWindow: true }).catch(() => []),
+    ]);
+    const ordered = [
+      ...activeTabs,
+      ...allTabs.filter(tab => !activeTabs.some(active => active.id === tab.id)),
+    ];
+    for (const tab of ordered) {
+      if (tab.id === undefined || tab.id === closedTabId || !tab.url || tab.url.startsWith('chrome-extension://')) continue;
+      try {
+        await this.context.browserContext.switchTab(tab.id);
+        return tab.id;
+      } catch {
+        // A candidate may be removed or denied by URL policy; continue to the next.
+      }
+    }
+    return undefined;
+  }
+
+  async getActiveTabId(): Promise<number | undefined> {
+    try {
+      return (await this.context.browserContext.getCurrentPage()).tabId;
+    } catch {
+      return undefined;
+    }
+  }
+
+
+
+  getRuntimeSnapshot() {
+    const navigatorInfo = this.navigator.getRuntimeInfo();
+    const plannerInfo = this.planner.getRuntimeInfo();
+    return {
+      memory: this.context.taskMemory.getFacts(),
+      plan: this.getPlan(),
+      step: this.context.nSteps,
+      replanCount: this.context.replanCount,
+      finalAnswer: this.context.finalAnswer,
+      startedAt: this.context.startedAt,
+      durationMs: Date.now() - this.context.startedAt,
+      estimatedInputTokens: this.context.messageManager.getEstimatedTokenCount(),
+      navigator: navigatorInfo,
+      planner: plannerInfo,
+      pendingWrite: this.context.pendingWrite,
+      approvedAction: this.context.approvedAction,
+    };
+  }
+
+  subscribeExecutionEvents(callback: EventCallback): () => void {
+    return this.context.eventManager.subscribe(EventType.EXECUTION, callback);
   }
 
   clearExecutionEvents(): void {
@@ -114,6 +191,15 @@ export class Executor {
    */
   private checkTaskCompletion(planOutput: AgentOutput<PlannerOutput> | null): boolean {
     if (planOutput?.result?.done) {
+      const steps = this.context.plan.length ? this.context.plan : (planOutput.result.steps ?? []);
+      const missingPlan = planOutput.result.web_task === true && steps.length === 0;
+      const invalidStatus = steps.some(step => !['completed','skipped'].includes(step.status));
+      const missingEvidence = planOutput.result.web_task && steps.some(step => step.status === 'completed' && step.evidenceIds.length === 0);
+      const invalid = missingPlan || invalidStatus || missingEvidence;
+      if (invalid) {
+        logger.info('Planner marked done but required plan steps remain incomplete');
+        return false;
+      }
       logger.info('✅ Planner confirms task completion');
       if (planOutput.result.final_answer) {
         this.context.finalAnswer = planOutput.result.final_answer;
@@ -123,6 +209,43 @@ export class Executor {
     return false;
   }
 
+  private async verifyCompletion(planOutput: AgentOutput<PlannerOutput> | null): Promise<boolean> {
+    if (!this.checkTaskCompletion(planOutput)) return false;
+    const webTask = planOutput?.result?.web_task === true;
+    // Web tasks must not bypass deterministic evidence/step checks by returning
+    // an empty plan. Non-web tasks are explicitly accepted by TaskVerifier.
+    const evidence = await taskRunStore.getEvidence(this.context.taskId, 50).catch(() => []);
+    try {
+      const result = await this.taskVerifier.verify(
+        this.tasks[this.tasks.length - 1],
+        this.context.plan,
+        evidence,
+        webTask,
+      );
+      if (!result.passed) {
+        await this.context.emitEvent(
+          Actors.VERIFIER,
+          ExecutionState.STEP_FAIL,
+          '完成核验未通过：' + result.reason,
+        );
+        return false;
+      }
+      await this.context.emitEvent(
+        Actors.VERIFIER,
+        ExecutionState.STEP_OK,
+        '完成核验通过' + (result.evidenceIds.length ? '，证据：' + result.evidenceIds.join(', ') : ''),
+      );
+      return true;
+    } catch (error) {
+      await this.context.emitEvent(
+        Actors.VERIFIER,
+        ExecutionState.STEP_FAIL,
+        '完成核验异常：' + (error instanceof Error ? error.message : String(error)),
+      );
+      return false;
+    }
+  }
+
   /**
    * Execute the task
    *
@@ -130,9 +253,9 @@ export class Executor {
    */
   async execute(): Promise<void> {
     logger.info(`🚀 Executing task: ${this.tasks[this.tasks.length - 1]}`);
-    // reset the step counter
     const context = this.context;
-    context.nSteps = 0;
+    const isFreshRun = context.nSteps === 0 && context.replanCount === 0 && context.finalAnswer === null;
+    if (isFreshRun) context.startedAt = Date.now();
     const allowedMaxSteps = this.context.options.maxSteps;
 
     try {
@@ -159,10 +282,14 @@ export class Executor {
         // Run planner periodically for guidance
         if (this.planner && (context.nSteps % context.options.planningInterval === 0 || navigatorDone)) {
           navigatorDone = false;
+          context.replanCount++;
+          if (context.replanCount > context.options.maxReplans) {
+            throw new MaxFailuresReachedError('达到最大重规划次数，停止自动循环');
+          }
           latestPlanOutput = await this.runPlanner();
 
           // Check if task is complete after planner run
-          if (this.checkTaskCompletion(latestPlanOutput)) {
+          if (await this.verifyCompletion(latestPlanOutput)) {
             break;
           }
         }
@@ -176,12 +303,11 @@ export class Executor {
         }
       }
 
-      // Determine task completion status
-      const isCompleted = latestPlanOutput?.result?.done === true;
+      // Determine task completion status with the same evidence/plan validation used by the planner gate.
+      const isCompleted = await this.verifyCompletion(latestPlanOutput);
 
       if (isCompleted) {
-        // Emit final answer if available, otherwise use task ID
-        const finalMessage = this.context.finalAnswer || this.context.taskId;
+        const finalMessage = await this.buildFinalAnswerWithEvidence(this.context.finalAnswer || this.context.taskId, latestPlanOutput?.result?.web_task === true);
         this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_OK, finalMessage);
 
         // Track task completion
@@ -194,6 +320,10 @@ export class Executor {
         const maxStepsError = new MaxStepsReachedError(t('exec_errors_maxStepsReached'));
         const errorCategory = analytics.categorizeError(maxStepsError);
         void analytics.trackTaskFailed(this.context.taskId, errorCategory);
+      } else if (this.context.consecutiveFailures >= this.context.options.maxFailures) {
+        const error = new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
+        this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_FAIL, error.message);
+        void analytics.trackTaskFailed(this.context.taskId, analytics.categorizeError(error));
       } else if (this.context.stopped) {
         this.context.emitEvent(Actors.SYSTEM, ExecutionState.TASK_CANCEL, t('exec_task_cancel'));
 
@@ -225,7 +355,7 @@ export class Executor {
       if (this.generalSettings?.replayHistoricalTasks) {
         const historyString = JSON.stringify(this.context.history);
         logger.info(`Executor history size: ${historyString.length}`);
-        await chatHistoryStore.storeAgentStepHistory(this.context.taskId, this.tasks[0], historyString);
+        await chatHistoryStore.storeAgentStepHistory(this.historySessionId, this.tasks[0], historyString);
       } else {
         logger.info('Replay historical tasks is disabled, skipping history storage');
       }
@@ -235,6 +365,22 @@ export class Executor {
   /**
    * Helper method to run planner and store its output
    */
+  private async buildFinalAnswerWithEvidence(answer: string, webTask: boolean): Promise<string> {
+    if (!webTask) return answer;
+    const evidence = await taskRunStore.getEvidence(this.context.taskId, 50).catch(() => []);
+    if (!evidence.length) return answer + '\n\n来源未能持久化，结论请人工核验。';
+    const requiredIds = new Set(this.context.plan.flatMap(step => step.evidenceIds));
+    const selected = requiredIds.size ? evidence.filter(item => requiredIds.has(item.id)) : evidence;
+    const citations = (selected.length ? selected : evidence)
+      .slice(0, 20)
+      .map(item =>
+        '- ' + item.id + ' · ' + (item.title || '页面') + ' · ' + item.url +
+        (item.pageNumber ? ' · 第' + item.pageNumber + '页' : ''),
+      )
+      .join('\n');
+    return answer + '\n\n来源证据：\n' + citations;
+  }
+
   private async runPlanner(): Promise<AgentOutput<PlannerOutput> | null> {
     const context = this.context;
     try {
@@ -254,7 +400,16 @@ export class Executor {
         planOutput = await this.planner.execute();
       }
       if (planOutput.result) {
-        this.context.messageManager.addPlan(JSON.stringify(planOutput.result), positionForPlan);
+        const normalized = normalizePlanSteps(planOutput.result.steps, planOutput.result.next_steps);
+        this.context.plan = mergePlan(this.context.plan, normalized);
+        this.context.messageManager.addPlan(
+          JSON.stringify({ ...planOutput.result, steps: this.context.plan }),
+          positionForPlan,
+        );
+        await taskRunStore.appendEvent(this.context.taskId, 'plan.updated', {
+          steps: this.context.plan,
+          replanCount: this.context.replanCount,
+        }).catch(() => undefined);
       }
       return planOutput;
     } catch (error) {
@@ -281,32 +436,31 @@ export class Executor {
   private async navigate(): Promise<boolean> {
     const context = this.context;
     try {
-      // Get and execute navigation action
-      // check if the task is paused or stopped
-      if (context.paused || context.stopped) {
-        return false;
-      }
+      if (context.paused || context.stopped) return false;
+
       const navOutput = await this.navigator.execute();
-      // check if the task is paused or stopped
-      if (context.paused || context.stopped) {
-        return false;
-      }
+
+      if (context.paused || context.stopped) return false;
+
       context.nSteps++;
-      if (navOutput.error) {
-        throw new Error(navOutput.error);
-      }
+      if (navOutput.error) throw new Error(navOutput.error);
       context.consecutiveFailures = 0;
-      // Agent Loop v2: 动作级失败写入工作记忆,供下一轮规划反思
-      for (const r of context.actionResults) {
-        if (r.error) {
-          context.taskMemory.add(`动作执行出错:${String(r.error).slice(0, 150)}。后续避免重复同样的失败。`);
+
+      for (const result of context.actionResults) {
+        if (result.error) {
+          context.taskMemory.add(
+            `动作执行出错:${String(result.error).slice(0, 150)}。后续避免重复同样的失败。`,
+          );
         }
       }
+
       if (navOutput.result?.done) {
+        this.context.plan = advancePlan(this.context.plan, true);
         return true;
       }
     } catch (error) {
       logger.error(`Failed to execute step: ${error}`);
+
       if (
         error instanceof ChatModelAuthError ||
         error instanceof ChatModelBadRequestError ||
@@ -316,20 +470,26 @@ export class Executor {
       ) {
         throw error;
       }
+
+      const failureClass = classifyFailure(error);
+      context.taskMemory.add(
+        `失败分类:${failureClass}。恢复策略:${recoveryAdvice(failureClass)}。`,
+      );
+      if (context.plan.some(step => step.status === 'running')) {
+        context.plan = advancePlan(context.plan, false);
+      }
+
       if (error instanceof URLNotAllowedError) {
-        // 被安全策略阻止的 URL(如 chrome:// 页)是可恢复失败:告知模型换目标,任务继续
         context.taskMemory.add(
           `目标 URL 被安全策略阻止(${String(error.message).slice(0, 120)})。chrome:// 等浏览器内部页面无法访问,请改用普通 http(s) 页面。`,
         );
-        context.consecutiveFailures++;
-        logger.warning('Step failed with URLNotAllowedError (recoverable):', error.message);
-        return false;
+      } else {
+        context.taskMemory.add(
+          `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,
+        );
       }
-      context.taskMemory.add(
-        `第 ${context.nSteps + 1} 步执行失败:${String(error).slice(0, 180)}。下一步必须改变方法,不要重复同样的操作。`,
-      );
+
       context.consecutiveFailures++;
-      logger.error(`Failed to execute step: ${error}`);
       if (context.consecutiveFailures >= context.options.maxFailures) {
         throw new MaxFailuresReachedError(t('exec_errors_maxFailuresReached'));
       }
@@ -364,6 +524,14 @@ export class Executor {
 
   async resume(): Promise<void> {
     this.context.resume();
+  }
+
+  getPendingWrite() {
+    return this.context.pendingWrite;
+  }
+
+  clearPendingWrite() {
+    this.context.pendingWrite = undefined;
   }
 
   async pause(): Promise<void> {

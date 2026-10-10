@@ -1,0 +1,34 @@
+name: browser-agent-harness
+
+on:
+  push:
+    branches: ['master', 'feat/browser-agent-runtime-m0']
+  pull_request:
+    branches: ['master']
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.1
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo ready
+      - run: pnpm --filter chrome-extension test
+      - run: pnpm --filter chrome-extension type-check
+      - run: pnpm --filter @extension/sidepanel type-check
+      - run: pnpm --filter @extension/options type-check
+      - run: pnpm --filter @extension/storage type-check
+      - run: pnpm exec turbo lint --continue
+      - run: pnpm build

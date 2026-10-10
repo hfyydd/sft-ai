@@ -6,12 +6,12 @@ import {
   generalSettingsStore,
   llmProviderStore,
   analyticsSettingsStore,
+  taskRunStore,
 } from '@extension/storage';
 import { t } from '@extension/i18n';
 import BrowserContext from './browser/context';
 import { Executor } from './agent/executor';
 import { createLogger } from './log';
-import { ExecutionState } from './agent/event/types';
 import { createChatModel } from './agent/helper';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import { DEFAULT_AGENT_OPTIONS } from './agent/types';
@@ -20,13 +20,20 @@ import { injectBuildDomTreeScripts } from './browser/dom/service';
 import { analytics } from './services/analytics';
 import { getSkillsSystemInstructions } from './services/skills';
 import { extractPdfTextFromUrl } from './agent/pdf';
+import { buildToolPolicy } from './services/toolPolicy';
+import { runController } from './task/run-controller';
+import { resolveApproval } from './task/approval-gate';
+import { resolveLocalPdfBytes } from './task/local-file-gate';
+import { resolveUserRequest } from './task/user-gate';
 
 const logger = createLogger('background');
 
 const browserContext = new BrowserContext({});
 let currentExecutor: Executor | null = null;
 let currentPort: chrome.runtime.Port | null = null;
+let uiExecutorUnsubscribe: (() => void) | null = null;
 const SIDE_PANEL_URL = chrome.runtime.getURL('side-panel/index.html');
+const RUNTIME_PROTOCOL_VERSION = 1;
 
 // Setup side panel behavior
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(error => console.error(error));
@@ -41,20 +48,102 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // if canceled_by_user, remove the tab from the browser context
 chrome.debugger.onDetach.addListener(async (source, reason) => {
   console.log('Debugger detached:', source, reason);
-  if (reason === 'canceled_by_user') {
-    if (source.tabId) {
-      currentExecutor?.cancel();
-      await browserContext.cleanup();
-    }
+  if (source.tabId) {
+    await runController.handleDebuggerDetached(source.tabId, reason);
+    if (reason === 'canceled_by_user') await browserContext.cleanup();
   }
 });
 
 // Cleanup when tab is closed
 chrome.tabs.onRemoved.addListener(tabId => {
   browserContext.removeAttachedPage(tabId);
+  void runController.handleTabClosed(tabId).finally(() => {
+    currentExecutor = runController.getExecutor();
+  });
 });
 
 logger.info('background loaded');
+runController.configure(
+  async run => {
+    if (run.activeTabId === undefined) throw new Error('Task has no target tab');
+    await browserContext.switchTab(run.activeTabId);
+    return setupExecutor(run.id, run.goal, browserContext, run.skillIds, run.sessionId);
+  },
+  async (_run, pendingWrite) => {
+    if (pendingWrite.tabId === undefined) return false;
+
+    if (pendingWrite.toolName === 'close_tab') {
+      const tab = await chrome.tabs.get(pendingWrite.tabId).catch(() => null);
+      return !tab;
+    }
+
+    const tab = await chrome.tabs.get(pendingWrite.tabId).catch(() => null);
+    if (!tab) return false;
+    await browserContext.switchTab(pendingWrite.tabId);
+    const page = await browserContext.getCurrentPage();
+
+    if (pendingWrite.toolName === 'go_to_url') {
+      return pendingWrite.expectedUrl ? page.url() === pendingWrite.expectedUrl : page.url() !== (pendingWrite.url || '');
+    }
+    if (pendingWrite.toolName === 'open_tab') {
+      const expectedUrl = pendingWrite.expectedUrl;
+      if (!expectedUrl) return false;
+      const tabs = await chrome.tabs.query({});
+      return tabs.some(candidate => {
+        if (!candidate.url) return false;
+        try {
+          return candidate.url === expectedUrl || new URL(candidate.url).hostname === new URL(expectedUrl).hostname;
+        } catch {
+          return false;
+        }
+      });
+    }
+    if (pendingWrite.toolName === 'click_element' && pendingWrite.index !== undefined) {
+      return page.verifyClickEffect(pendingWrite.index, pendingWrite.url || '');
+    }
+    if (pendingWrite.toolName === 'go_back') {
+      if (page.url() !== (pendingWrite.url || '')) return true;
+      if (pendingWrite.beforeObservationSignature) {
+        return (await page.getObservationSignature()) !== pendingWrite.beforeObservationSignature;
+      }
+      return false;
+    }
+    if (pendingWrite.toolName === 'send_keys' && pendingWrite.beforeObservationSignature) {
+      return (await page.getObservationSignature()) !== pendingWrite.beforeObservationSignature;
+    }
+    if (pendingWrite.toolName === 'fill_form' && pendingWrite.expectedFieldHashes?.length) {
+      for (const field of pendingWrite.expectedFieldHashes) {
+        const value = await page.getInputValue(field.index);
+        if (value === null) return false;
+        const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+        const actualHash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+        if (actualHash !== field.valueHash) return false;
+      }
+      return true;
+    }
+    if (
+      pendingWrite.expectedValueHash &&
+      pendingWrite.index !== undefined &&
+      (pendingWrite.toolName === 'input_text' || pendingWrite.toolName === 'select_dropdown_option')
+    ) {
+      const value =
+        pendingWrite.toolName === 'select_dropdown_option'
+          ? await page.getSelectedOptionText(pendingWrite.index)
+          : await page.getInputValue(pendingWrite.index);
+      if (value === null) return false;
+      const data = new TextEncoder().encode(JSON.stringify(value));
+      const digest = await crypto.subtle.digest('SHA-256', data);
+      const hash = Array.from(new Uint8Array(digest)).map(v => v.toString(16).padStart(2, '0')).join('');
+      return hash === pendingWrite.expectedValueHash;
+    }
+    return false;
+  },
+);
+void runController.initialize().catch(error => logger.error('Failed to initialize task runtime:', error));
+void generalSettingsStore
+  .getSettings()
+  .then(settings => taskRunStore.cleanupRetention(settings.taskRunMaxTerminalRuns, 2000, 200, settings.taskRunRetentionDays))
+  .catch(error => logger.error('Failed to cleanup task runtime retention:', error));
 
 // Initialize analytics
 analytics.init().catch(error => {
@@ -69,9 +158,56 @@ analyticsSettingsStore.subscribe(() => {
 });
 
 // Listen for simple messages (e.g., from options page)
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (
+    msg?.type === 'resolve_local_file_read' &&
+    sender.id === chrome.runtime.id &&
+    sender.url === SIDE_PANEL_URL &&
+    msg.runId &&
+    msg.requestId &&
+    (typeof msg.dataBase64 === 'string' || typeof msg.error === 'string')
+  ) {
+    resolveLocalPdfBytes({
+      runId: msg.runId,
+      requestId: msg.requestId,
+      dataBase64: typeof msg.dataBase64 === 'string' ? msg.dataBase64 : undefined,
+      error: typeof msg.error === 'string' ? msg.error : undefined,
+    })
+      .then(async ok => {
+        if (ok && !runController.getExecutor()) {
+          await runController.resume(msg.runId).catch(error => logger.warning('Local PDF read accepted; resume deferred:', error));
+          currentExecutor = runController.getExecutor();
+          if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+        }
+        sendResponse({ ok });
+      })
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
+  if (msg?.type === 'get_latest_active_run') {
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
+    taskRunStore.listActiveRuns()
+      .then(runs => sendResponse({ ok: true, run: runs.sort((a, b) => b.updatedAt - a.updatedAt)[0] ?? null }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
+  if (msg?.type === 'get_latest_run_for_session' && typeof msg.sessionId === 'string') {
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
+    taskRunStore.listBySession(msg.sessionId)
+      .then(runs => sendResponse({ ok: true, run: runs.sort((a,b) => b.updatedAt - a.updatedAt)[0] }))
+      .catch(error => sendResponse({ ok: false, error: error instanceof Error ? error.message : String(error) }));
+    return true;
+  }
+
   if (msg?.type === 'debug_pdf_extract' && msg.url) {
-    extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
+    if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
+    extractPdfTextFromUrl(msg.url, {
+      cMapUrl: chrome.runtime.getURL('cmaps/'),
+      maxChars: 3000,
+      validateUrl: url => browserContext.assertUrlAllowed(url),
+    })
       .then(r =>
         sendResponse({
           ok: true,
@@ -84,6 +220,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       .catch(e => sendResponse({ ok: false, error: String(e).slice(0, 300) }));
     return true; // 异步响应
   }
+  return false;
 });
 
 // Setup connection listener for long-lived connections (e.g., side panel)
@@ -112,12 +249,31 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_newTask_noTask') });
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
-            logger.info('new_task', message.tabId, message.task);
-            currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
-            subscribeToExecutorEvents(currentExecutor);
+            const runId = message.runId || message.taskId;
+            const sessionId = message.sessionId || message.taskId || runId;
+            if (!runId) return port.postMessage({ type: 'error', error: t('bg_errors_noTaskId') });
 
-            const result = await currentExecutor.execute();
-            logger.info('new_task execution result', message.tabId, result);
+            logger.info('new_task', message.tabId, message.task);
+            await browserContext.switchTab(message.tabId);
+            const run = await taskRunStore.getRun(runId).catch(() => undefined);
+            if (run) {
+              return port.postMessage({ type: 'error', error: `任务 ${runId} 已存在，请使用继续/恢复操作` });
+            }
+            await runController.createAndStart({
+              runId,
+              sessionId,
+              goal: message.task,
+              tabId: message.tabId,
+              skillIds: message.skillIds || [],
+              parentRunId: message.parentRunId,
+              createExecutor: async taskRun => {
+                await browserContext.switchTab(message.tabId);
+                return setupExecutor(taskRun.id, taskRun.goal, browserContext, message.skillIds || [], taskRun.sessionId);
+              },
+            });
+            currentExecutor = runController.getExecutor();
+            if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            port.postMessage({ type: 'run_started', version: RUNTIME_PROTOCOL_VERSION, runId, sessionId });
             break;
           }
 
@@ -125,42 +281,165 @@ chrome.runtime.onConnect.addListener(port => {
             if (!message.task) return port.postMessage({ type: 'error', error: t('bg_cmd_followUpTask_noTask') });
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
 
-            logger.info('follow_up_task', message.tabId, message.task);
+            const runId = message.runId || message.taskId;
+            if (!runId) return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
+            await browserContext.switchTab(message.tabId);
+            const run = await taskRunStore.getRun(runId).catch(() => undefined);
+            if (!run) return port.postMessage({ type: 'error', error: '原任务不存在，请重新创建任务' });
 
-            // If executor exists, add follow-up task
-            if (currentExecutor) {
-              currentExecutor.addFollowUpTask(message.task);
-              // Re-subscribe to events in case the previous subscription was cleaned up
-              subscribeToExecutorEvents(currentExecutor);
-              const result = await currentExecutor.execute();
-              logger.info('follow_up_task execution result', message.tabId, result);
-            } else {
-              // Agent Loop v2: 执行器已清理(如 SW 重启)时,自动降级为新任务而不是报错
-              logger.info('follow_up_task: executor was cleaned up, starting a new task instead');
-              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
-              subscribeToExecutorEvents(currentExecutor);
-              const result = await currentExecutor.execute();
-              logger.info('new_task execution result', message.tabId, result);
-            }
+            await runController.continueWithFollowUp(run.id, message.task);
+            currentExecutor = runController.getExecutor();
+            if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            port.postMessage({ type: 'run_started', version: RUNTIME_PROTOCOL_VERSION, runId: run.id, sessionId: run.sessionId });
             break;
+          }
+
+          case 'user_intervention_response': {
+            if (!message.runId || !message.nonce || typeof message.answer !== 'string') {
+              return port.postMessage({ type: 'error', error: '无效的用户介入响应' });
+            }
+            const ok = await resolveUserRequest({ runId: message.runId, nonce: message.nonce, answer: message.answer });
+            if (ok) {
+              if (!runController.getExecutor()) {
+                await runController.resume(message.runId).catch(error => logger.warning('User response accepted; resume deferred:', error));
+                currentExecutor = runController.getExecutor();
+                if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+              }
+              return port.postMessage({ type: 'success' });
+            }
+            return port.postMessage({ type: 'error', error: '用户介入请求已过期或无效' });
+          }
+
+          case 'approve_action':
+          case 'reject_action': {
+            if (!message.runId || !message.nonce || !message.parameterHash) {
+              return port.postMessage({ type: 'error', error: 'Invalid approval request' });
+            }
+            const ok = await resolveApproval({
+              runId: message.runId,
+              nonce: message.nonce,
+              parameterHash: message.parameterHash,
+              approved: message.type === 'approve_action',
+            });
+            if (ok && message.type === 'approve_action' && !runController.getExecutor()) {
+              await runController.resume(message.runId).catch(error => logger.warning('Approval accepted; resume deferred:', error));
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+            }
+            return port.postMessage({ type: ok ? 'success' : 'error', error: ok ? undefined : 'Approval is stale or invalid' });
+          }
+
+          case 'get_run_snapshot': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            try {
+              const snapshot = await runController.snapshot(message.runId, Number(message.afterSequence || 0));
+              return port.postMessage({ type: 'run_snapshot', version: RUNTIME_PROTOCOL_VERSION, snapshot });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
+          case 'get_run_events_before': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            try {
+              const events = await taskRunStore.getEventsBefore(
+                message.runId,
+                Number(message.beforeSequence || Number.MAX_SAFE_INTEGER),
+                Math.min(Number(message.limit || 100), 200),
+              );
+              return port.postMessage({ type: 'run_events_before', version: RUNTIME_PROTOCOL_VERSION, events });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
+          case 'get_run_events': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            try {
+              const events = await taskRunStore.getEvents(
+                message.runId,
+                Number(message.afterSequence || 0),
+                Math.min(Number(message.limit || 200), 500),
+              );
+              return port.postMessage({ type: 'run_events', version: RUNTIME_PROTOCOL_VERSION, events });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
+          case 'get_run_evidence': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            try {
+              const evidence = await taskRunStore.getEvidence(message.runId, Number(message.limit || 200));
+              return port.postMessage({ type: 'run_evidence', evidence });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : String(error) });
+            }
+          }
+
+          case 'subscribe_run': {
+            if (!message.runId) return port.postMessage({ type: 'error', error: 'Missing runId' });
+            const run = await taskRunStore.getRun(message.runId);
+            if (!run) return port.postMessage({ type: 'error', error: 'Unknown task run' });
+            const executor = runController.getExecutor();
+            if (executor && runController.getRunId() === message.runId) {
+              if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
+              uiExecutorUnsubscribe = subscribeToExecutorEvents(executor);
+            }
+            const snapshot = await runController.snapshot(message.runId, Number(message.afterSequence || 0));
+            for (const event of snapshot.events) {
+              port.postMessage({
+                type: 'run_event',
+                version: RUNTIME_PROTOCOL_VERSION,
+                event: {
+                  id: event.id,
+                  runId: event.runId,
+                  sequence: event.sequence,
+                  type: event.type,
+                  timestamp: event.timestamp,
+                  payload: event.payload,
+                  actor: event.payload && typeof event.payload === 'object' && 'actor' in event.payload
+                    ? String((event.payload as { actor?: unknown }).actor ?? 'system')
+                    : 'system',
+                  state: event.type,
+                  data: event.payload && typeof event.payload === 'object' && 'data' in event.payload
+                    ? (event.payload as { data?: unknown }).data
+                    : { taskId: run.id, step: 0, maxSteps: 0, details: '' },
+
+                },
+              });
+            }
+            return port.postMessage({ type: 'subscribed_run', version: RUNTIME_PROTOCOL_VERSION, runId: message.runId });
           }
 
           case 'cancel_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
-            await currentExecutor.cancel();
-            break;
+            try {
+              await runController.cancel(message.taskId);
+              currentExecutor = null;
+              return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_errors_noRunningTask') });
+            }
           }
 
           case 'resume_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_cmd_resumeTask_noTask') });
-            await currentExecutor.resume();
-            return port.postMessage({ type: 'success' });
+            try {
+              await runController.resume(message.taskId);
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
+              return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_cmd_resumeTask_noTask') });
+            }
           }
 
           case 'pause_task': {
-            if (!currentExecutor) return port.postMessage({ type: 'error', error: t('bg_errors_noRunningTask') });
-            await currentExecutor.pause();
-            return port.postMessage({ type: 'success' });
+            try {
+              await runController.pause(message.taskId);
+              return port.postMessage({ type: 'success' });
+            } catch (error) {
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_errors_noRunningTask') });
+            }
           }
 
           case 'screenshot': {
@@ -236,26 +515,17 @@ chrome.runtime.onConnect.addListener(port => {
           case 'replay': {
             if (!message.tabId) return port.postMessage({ type: 'error', error: t('bg_errors_noTabId') });
             if (!message.taskId) return port.postMessage({ type: 'error', error: t('bg_errors_noTaskId') });
-            if (!message.historySessionId)
-              return port.postMessage({ type: 'error', error: t('bg_cmd_replay_noHistory') });
-            logger.info('replay', message.tabId, message.taskId, message.historySessionId);
-
+            if (!message.historySessionId) return port.postMessage({ type: 'error', error: t('bg_cmd_replay_noHistory') });
             try {
-              // Switch to the specified tab
               await browserContext.switchTab(message.tabId);
-              // Setup executor with the new taskId and a dummy task description
-              currentExecutor = await setupExecutor(message.taskId, message.task, browserContext);
-              subscribeToExecutorEvents(currentExecutor);
-
-              // Run replayHistory with the history session ID
-              const result = await currentExecutor.replayHistory(message.historySessionId);
-              logger.debug('replay execution result', message.tabId, result);
+              const existing = await taskRunStore.getRun(message.taskId).catch(() => undefined);
+              if (existing) return port.postMessage({ type: 'error', error: '回放任务已经存在' });
+              await runController.startReplay(message.taskId, message.historySessionId, message.task || ('Replay ' + message.historySessionId), message.tabId);
+              currentExecutor = runController.getExecutor();
+              if (currentExecutor) subscribeToExecutorEvents(currentExecutor);
             } catch (error) {
               logger.error('Replay failed:', error);
-              return port.postMessage({
-                type: 'error',
-                error: error instanceof Error ? error.message : t('bg_cmd_replay_failed'),
-              });
+              return port.postMessage({ type: 'error', error: error instanceof Error ? error.message : t('bg_cmd_replay_failed') });
             }
             break;
           }
@@ -273,15 +543,14 @@ chrome.runtime.onConnect.addListener(port => {
     });
 
     port.onDisconnect.addListener(() => {
-      // this event is also triggered when the side panel is closed, so we need to cancel the task
+      // Closing the Side Panel only disconnects the UI. The durable task continues.
       console.log('Side panel disconnected');
-      currentPort = null;
-      currentExecutor?.cancel();
+      if (currentPort === port) currentPort = null;
     });
   }
 });
 
-async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext) {
+async function setupExecutor(taskId: string, task: string, browserContext: BrowserContext, skillIds: string[] = [], historySessionId: string = taskId) {
   const providers = await llmProviderStore.getAllProviders();
   // if no providers, need to display the options page
   if (Object.keys(providers).length === 0) {
@@ -335,21 +604,13 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
     displayHighlights: false, // 元素高亮框已按需求移除
   });
 
-  // 给规划器提供"用户当前正在看的页面"上下文,避免对页面相关问题拒答
-  let taskWithPage = task;
-  try {
-    const [activeTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-    if (activeTab?.url && /^https?:/i.test(activeTab.url)) {
-      taskWithPage =
-        task + '\n\n[用户当前正在浏览的页面:' + (activeTab.title || '(无标题)') + '(' + activeTab.url + ')]';
-    }
-  } catch (e) {
-    logger.warn('Failed to get active tab for task context:', e);
-  }
+  // 任务标签页由 new_task/follow_up_task/replay 在创建 Executor 前显式绑定。
+  // 不再静默读取活动标签页，避免任务在用户切换窗口后漂移到另一页面。
 
-  const executor = new Executor(taskWithPage, taskId, browserContext, navigatorLLM, {
+  const executor = new Executor(task, taskId, browserContext, navigatorLLM, {
     plannerLLM: plannerLLM ?? navigatorLLM,
-    skillsInstructions: await getSkillsSystemInstructions(),
+    skillsInstructions: await getSkillsSystemInstructions(skillIds),
+    historySessionId,
     agentOptions: {
       maxSteps: generalSettings.maxSteps,
       maxFailures: generalSettings.maxFailures,
@@ -359,32 +620,30 @@ async function setupExecutor(taskId: string, task: string, browserContext: Brows
       planningInterval: generalSettings.planningInterval,
     },
     generalSettings: generalSettings,
+    toolPolicy: await buildToolPolicy(skillIds),
   });
 
   return executor;
 }
 
 // Update subscribeToExecutorEvents to use port
-async function subscribeToExecutorEvents(executor: Executor) {
-  // Clear previous event listeners to prevent multiple subscriptions
-  executor.clearExecutionEvents();
-
-  // Subscribe to new events
-  executor.subscribeExecutionEvents(async event => {
+function subscribeToExecutorEvents(executor: Executor): () => void {
+  void executor;
+  const runId = runController.getRunId();
+  if (!runId) return () => undefined;
+  if (uiExecutorUnsubscribe) uiExecutorUnsubscribe();
+  uiExecutorUnsubscribe = runController.subscribe(async (event, sequence) => {
+    if (runController.getRunId() !== runId) return;
     try {
-      if (currentPort) {
-        currentPort.postMessage(event);
-      }
+      currentPort?.postMessage({
+        ...event,
+        version: RUNTIME_PROTOCOL_VERSION,
+        sequence,
+        runtimeEvent: true,
+      });
     } catch (error) {
-      logger.error('Failed to send message to side panel:', error);
-    }
-
-    if (
-      event.state === ExecutionState.TASK_OK ||
-      event.state === ExecutionState.TASK_FAIL ||
-      event.state === ExecutionState.TASK_CANCEL
-    ) {
-      await currentExecutor?.cleanup();
+      logger.error('Failed to send durable task event to side panel:', error);
     }
   });
+  return uiExecutorUnsubscribe;
 }

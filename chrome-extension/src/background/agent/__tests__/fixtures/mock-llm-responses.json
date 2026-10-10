@@ -1,0 +1,60 @@
+{
+  "planner.basic": {
+    "observation": "页面已读取",
+    "challenges": "",
+    "done": false,
+    "next_steps": "1. 采集\\n2. 汇总",
+    "final_answer": "",
+    "reasoning": "按用户目标执行",
+    "web_task": true,
+    "memory_write": "关键事实来自页面 [evidence:ev-1]",
+    "steps": [
+      {
+        "id": "collect",
+        "title": "采集",
+        "successCriteria": "得到来源事实",
+        "status": "running",
+        "evidenceIds": [
+          "ev-1"
+        ]
+      },
+      {
+        "id": "summarize",
+        "title": "汇总",
+        "successCriteria": "输出比较结果",
+        "status": "queued",
+        "evidenceIds": []
+      }
+    ]
+  },
+  "navigator.read": {
+    "current_state": {
+      "evaluation_previous_goal": "读取成功",
+      "memory": "",
+      "next_goal": "完成下一步"
+    },
+    "action": [
+      {
+        "read_page": {
+          "intent": "读取当前页面",
+          "maxLength": 3000
+        }
+      }
+    ]
+  },
+  "navigator.submit": {
+    "current_state": {
+      "evaluation_previous_goal": "草稿已核对",
+      "memory": "",
+      "next_goal": "提交"
+    },
+    "action": [
+      {
+        "click_element": {
+          "intent": "提交表单",
+          "index": 10
+        }
+      }
+    ]
+  }
+}

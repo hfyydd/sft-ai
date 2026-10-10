@@ -181,6 +181,38 @@ export const GeneralSettings = ({ isDarkMode = false }: GeneralSettingsProps) =>
 
           <div className="flex items-center justify-between">
             <div>
+              <h3 className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'} text-base font-medium`}>{t('options_general_taskRunRetentionDays')}</h3>
+              <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} text-sm font-normal`}>{t('options_general_taskRunRetentionDays_desc')}</p>
+            </div>
+            <input
+              id="taskRunRetentionDays"
+              type="number"
+              min={1}
+              max={365}
+              value={settings.taskRunRetentionDays}
+              onChange={e => updateSetting('taskRunRetentionDays', Number.parseInt(e.target.value, 10))}
+              className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className={`${isDarkMode ? 'text-gray-300' : 'text-gray-700'} text-base font-medium`}>{t('options_general_taskRunMaxTerminalRuns')}</h3>
+              <p className={`${isDarkMode ? 'text-gray-400' : 'text-gray-500'} text-sm font-normal`}>{t('options_general_taskRunMaxTerminalRuns_desc')}</p>
+            </div>
+            <input
+              id="taskRunMaxTerminalRuns"
+              type="number"
+              min={1}
+              max={500}
+              value={settings.taskRunMaxTerminalRuns}
+              onChange={e => updateSetting('taskRunMaxTerminalRuns', Number.parseInt(e.target.value, 10))}
+              className={`w-20 rounded-md border ${isDarkMode ? 'border-slate-600 bg-slate-700 text-gray-200' : 'border-gray-300 bg-white text-gray-700'} px-3 py-2`}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
               <h3 className={`text-base font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 {t('options_general_replayHistoricalTasks')}
               </h3>

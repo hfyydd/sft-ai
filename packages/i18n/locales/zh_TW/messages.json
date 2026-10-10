@@ -959,5 +959,92 @@
         "example": "Option not found"
       }
     }
-  }
+  },
+  "task_plan": {
+    "message": "任務計畫"
+  },
+  "task_timeline": {
+    "message": "任務時間線"
+  },
+  "task_evidence": {
+    "message": "證據來源"
+  },
+  "task_status": {
+    "message": "狀態"
+  },
+  "task_pause": {
+    "message": "暫停"
+  },
+  "task_resume": {
+    "message": "繼續"
+  },
+  "task_cancel": {
+    "message": "取消"
+  },
+  "task_approval_needed": {
+    "message": "需要確認"
+  },
+  "task_approve_once": {
+    "message": "批准一次"
+  },
+  "task_reject": {
+    "message": "拒絕"
+  },
+  "task_user_input_needed": {
+    "message": "需要你的輸入"
+  },
+  "task_submit_answer": {
+    "message": "提交回答"
+  },
+  "task_load_earlier": {
+    "message": "載入較早事件"
+  },
+  "task_manual_skills": {
+    "message": "本次任務 Skill"
+  },
+  "task_no_evidence": {
+    "message": "沒有可持久化的證據，請人工核驗。"
+  },
+  "act_done_start": {
+    "message": "开始结束任务"
+  },
+  "act_done_ok": {
+    "message": "任务已完成"
+  },
+  "act_readPage_start": {
+    "message": "开始读取页面"
+  },
+  "act_readPage_pdf": {
+    "message": "正在读取 PDF"
+  },
+  "act_readPage_vision": {
+    "message": "正在使用视觉读取页面"
+  },
+  "act_readPage_empty": {
+    "message": "页面没有可读取文本"
+  },
+  "act_readPage_vision_ok": {
+    "message": "视觉读取完成"
+  },
+  "exec_navigator_start": {
+    "message": "开始执行浏览器动作"
+  },
+  "exec_navigator_ok": {
+    "message": "浏览器动作执行完成"
+  },
+  "exec_navigator_cancel": {
+    "message": "浏览器动作已取消"
+  },
+  "exec_planner_start": {
+    "message": "开始规划任务"
+  },
+  "exec_planner_fail": {
+    "message": "任务规划失败"
+  },
+  "act_readPage_ok": {"message":"已读取页面文本"},
+  "act_readPage_fail": {"message":"读取页面文本失败:"},
+  "options_general_taskRunRetentionDays": {"message":"任务记录保留天数"},
+  "options_general_taskRunRetentionDays_desc": {"message":"超过该天数的已结束任务记录将被清理。"},
+  "options_general_taskRunMaxTerminalRuns": {"message":"最多保留已结束任务数"},
+  "options_general_taskRunMaxTerminalRuns_desc": {"message":"IndexedDB 中最多保留这么多已结束任务。"}
 }

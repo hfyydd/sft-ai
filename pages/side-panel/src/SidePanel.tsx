@@ -3,11 +3,16 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { FiArrowLeft, FiSettings } from 'react-icons/fi';
 import { PiPlusBold } from 'react-icons/pi';
 import { GrHistory } from 'react-icons/gr';
-import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore } from '@extension/storage';
+import { type Message, Actors, chatHistoryStore, agentModelStore, generalSettingsStore, skillStore, type Skill } from '@extension/storage';
 import { t } from '@extension/i18n';
 import MessageList from './components/MessageList';
 import ChatInput from './components/ChatInput';
 import ChatHistoryList from './components/ChatHistoryList';
+import { TaskPlanPanel } from './components/TaskPlanPanel';
+import { TaskTimeline } from './components/TaskTimeline';
+import { EvidenceList, type EvidenceItem } from './components/EvidenceList';
+import { ApprovalCard } from './components/ApprovalCard';
+import { UserRequestCard } from './components/UserRequestCard';
 import { EventType, type AgentEvent, ExecutionState } from './types/event';
 import './SidePanel.css';
 
@@ -33,48 +38,104 @@ const SidePanel = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessingSpeech, setIsProcessingSpeech] = useState(false);
   const [isReplaying, setIsReplaying] = useState(false);
+  const [approvalAction, setApprovalAction] = useState<any | null>(null);
+  const [userRequest, setUserRequest] = useState<any | null>(null);
+  const [runSnapshot, setRunSnapshot] = useState<any | null>(null);
+  const [runEvidence, setRunEvidence] = useState<EvidenceItem[]>([]);
+  const requestRunSnapshot = useCallback((runId: string) => {
+    runIdRef.current = runId;
+    lastRunSequenceRef.current = 0;
+    portRef.current?.postMessage({ type: 'get_run_snapshot', runId, afterSequence: 0 });
+    portRef.current?.postMessage({ type: 'get_run_evidence', runId, limit: 200 });
+  }, []);
+  const [timelineHasMore, setTimelineHasMore] = useState(false);
+  const taskStartPendingRef = useRef(false);
+  const [manualSkills, setManualSkills] = useState<Skill[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [replayEnabled, setReplayEnabled] = useState(false);
   const sessionIdRef = useRef<string | null>(null);
+  const runIdRef = useRef<string | null>(null);
   const isReplayingRef = useRef<boolean>(false);
   const portRef = useRef<chrome.runtime.Port | null>(null);
   const heartbeatIntervalRef = useRef<number | null>(null);
+  const setupConnectionRef = useRef<(() => void) | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const lastRunSequenceRef = useRef(0);
 
-  // 响应后台的本地文件读取请求(file:// PDF 解析:SW 无法读 file://,由扩展页面代读)
+  // 本地 PDF 必须对应当前浏览器已打开的 file:// URL，并且扩展已获得文件 URL 访问权限。
+  const readAuthorizedLocalFile = useCallback(async (path: string, requestId: string, runId?: string, tabId?: number) => {
+    if (!path.startsWith('file://') || !/\.pdf(?:[?#]|$)/i.test(path)) throw new Error('只允许读取已打开的 file:// 文件');
+    // Chrome's URL filter expects match patterns and can reject concrete file:// URLs.
+    // Enumerating tabs and comparing the exact canonical URL also prevents arbitrary path reads.
+    const tabs = await chrome.tabs.query({});
+    const targetUrl = new URL(path).href;
+    if (!tabs.some(tab => tab.url === targetUrl && (tabId === undefined || tab.id === tabId))) {
+      throw new Error('该本地 PDF 未在浏览器中打开，不能读取任意文件路径');
+    }
+    const allowed = await new Promise<boolean>(resolve => chrome.extension.isAllowedFileSchemeAccess(resolve));
+    if (!allowed) {
+      throw new Error('未开启“允许访问文件网址”，请在扩展详情中开启后重试');
+    }
+    const data = await new Promise<ArrayBuffer>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', path);
+      xhr.responseType = 'arraybuffer';
+      xhr.timeout = 60_000;
+      xhr.onload = () => {
+        if (xhr.status !== 200 && xhr.status !== 0) {
+          reject(new Error('读取失败 HTTP ' + xhr.status));
+          return;
+        }
+        resolve(xhr.response);
+      };
+      xhr.onprogress = event => {
+        if (event.loaded > 10 * 1024 * 1024) xhr.abort();
+      };
+      xhr.onerror = () => reject(new Error('读取失败(可能未开启文件访问权限)'));
+      xhr.onabort = () => reject(new Error('本地 PDF 超过 10MB 限制'));
+      xhr.ontimeout = () => reject(new Error('本地 PDF 读取超时'));
+      xhr.send();
+    });
+    const bytes = new Uint8Array(data);
+    if (bytes.byteLength > 10 * 1024 * 1024) throw new Error('本地 PDF 超过 10MB 限制');
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as unknown as number[]);
+    }
+    const dataBase64 = btoa(binary);
+    return { type: 'resolve_local_file_read', runId: runId || sessionIdRef.current, requestId, dataBase64 };
+  }, []);
+
+  // 接收后台的敏感动作/用户介入/本地文件请求。
   useEffect(() => {
-    const listener = (
-      msg: { type?: string; path?: string },
-      _sender: chrome.runtime.MessageSender,
-      sendResponse: (resp: { ok: boolean; dataBase64?: string; error?: string }) => void,
-    ) => {
-      if (msg?.type !== 'read_file_arraybuffer' || !msg.path) return false;
-      try {
-        const xhr = new XMLHttpRequest();
-        xhr.open('GET', msg.path);
-        xhr.responseType = 'arraybuffer';
-        xhr.onload = () => {
-          if (xhr.status !== 200 && xhr.status !== 0) {
-            sendResponse({ ok: false, error: 'HTTP ' + xhr.status });
-            return;
-          }
-          const bytes = new Uint8Array(xhr.response);
-          let binary = '';
-          const chunkSize = 0x8000;
-          for (let i = 0; i < bytes.length; i += chunkSize) {
-            binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize) as unknown as number[]);
-          }
-          sendResponse({ ok: true, dataBase64: btoa(binary) });
-        };
-        xhr.onerror = () => sendResponse({ ok: false, error: '读取失败(可能未开启文件访问权限)' });
-        xhr.send();
-      } catch (e) {
-        sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+    const listener = (msg: { type?: string; action?: any; request?: any }) => {
+      if (msg?.type === 'approval_required') {
+        setApprovalAction(msg.action);
+        return;
       }
-      return true; // 异步 sendResponse
+      if (msg?.type === 'user_intervention_required') {
+        setUserRequest(msg.request);
+        return;
+      }
+      if (msg?.type === 'local_file_read_requested' && msg.request) {
+        void readAuthorizedLocalFile(msg.request.path, msg.request.requestId, msg.request.runId, msg.request.tabId)
+          .then(response => chrome.runtime.sendMessage(response))
+          .catch(error =>
+            chrome.runtime.sendMessage({
+              type: 'resolve_local_file_read',
+              runId: msg.request.runId,
+              requestId: msg.request.requestId,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          );
+      }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
-  }, []);
+  }, [readAuthorizedLocalFile]);
+
   const setInputTextRef = useRef<((text: string) => void) | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -123,6 +184,27 @@ const SidePanel = () => {
     checkModelConfiguration();
     loadGeneralSettings();
   }, [checkModelConfiguration, loadGeneralSettings]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadManualSkills = async () => {
+      try {
+        const skills = (await skillStore.getSkills()).filter(skill => skill.enabled && skill.mode === 'manual');
+        if (!cancelled) {
+          setManualSkills(skills);
+          setSelectedSkillIds(prev => prev.filter(id => skills.some(skill => skill.id === id)));
+        }
+      } catch (error) {
+        console.error('Failed to load manual skills:', error);
+      }
+    };
+    void loadManualSkills();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
 
   // Re-check model configuration when the side panel becomes visible again
   useEffect(() => {
@@ -346,7 +428,94 @@ const SidePanel = () => {
       portRef.current.onMessage.addListener((message: any) => {
         // Add type checking for message
         if (message && message.type === EventType.EXECUTION) {
+          if (message.data?.taskId === runIdRef.current && message.runtimeEvent && typeof message.sequence === 'number') {
+            if (message.sequence > lastRunSequenceRef.current) {
+              lastRunSequenceRef.current = message.sequence;
+              const runtimeEvent = { ...message };
+              setRunSnapshot((prev: any) => {
+                if (!prev?.run) return prev;
+                const state = message.state;
+                const status =
+                  state === ExecutionState.TASK_OK ? 'completed' :
+                  state === ExecutionState.TASK_FAIL ? 'failed' :
+                  state === ExecutionState.TASK_CANCEL ? 'cancelled' :
+                  state === ExecutionState.TASK_PAUSE ? 'paused' :
+                  state === ExecutionState.TASK_RESUME || state === ExecutionState.TASK_START ? 'running' :
+                  prev.run.status;
+                return { ...prev, run: { ...prev.run, status } };
+              });
+              setRunSnapshot((prev: any) =>
+                prev ? { ...prev, events: [...(prev.events || []).filter((e: any) => e.sequence !== message.sequence), runtimeEvent].sort((a: any,b: any) => a.sequence-b.sequence).slice(-500) } : prev,
+              );
+            }
+          }
           handleTaskState(message);
+        } else if (message && message.type === 'run_started') {
+          if (message.runId && message.runId === runIdRef.current) {
+            taskStartPendingRef.current = false;
+            requestRunSnapshot(message.runId);
+          }
+        } else if (message && message.type === 'run_snapshot') {
+          if (message.snapshot?.run?.id && message.snapshot.run.id !== runIdRef.current) return;
+          setRunSnapshot(message.snapshot);
+          setSelectedSkillIds(message.snapshot?.run?.skillIds ?? []);
+          taskStartPendingRef.current = false;
+          if (['completed','failed','cancelled'].includes(message.snapshot?.run?.status)) {
+            setApprovalAction(null);
+            setUserRequest(null);
+          }
+          const snapshotEvents = message.snapshot?.events || [];
+          lastRunSequenceRef.current = snapshotEvents.length ? Math.max(...snapshotEvents.map((e: any) => e.sequence)) : Number(message.afterSequence || 0);
+          setTimelineHasMore(snapshotEvents.length > 0 && snapshotEvents[0].sequence > 1);
+          if (message.snapshot?.run?.id) {
+            // Snapshot first, then subscribe from its sequence. This closes the
+            // race where early live events arrive before the snapshot exists.
+            portRef.current?.postMessage({
+              type: 'subscribe_run',
+              runId: message.snapshot.run.id,
+              afterSequence: lastRunSequenceRef.current,
+            });
+          }
+          setApprovalAction(message.snapshot?.checkpoint?.pendingAction ?? null);
+          setUserRequest(message.snapshot?.checkpoint?.pendingUserRequest ?? null);
+          const pendingFile = message.snapshot?.checkpoint?.pendingFileRead;
+          if (pendingFile) {
+            void readAuthorizedLocalFile(pendingFile.path, pendingFile.requestId, pendingFile.runId, pendingFile.tabId)
+              .then(response => chrome.runtime.sendMessage(response))
+              .catch(error => chrome.runtime.sendMessage({
+                type: 'resolve_local_file_read',
+                runId: pendingFile.runId,
+                requestId: pendingFile.requestId,
+                error: error instanceof Error ? error.message : String(error),
+              }));
+          }
+        } else if (message && message.type === 'run_event') {
+          const event = message.event;
+          if (event?.runId === runIdRef.current && event.sequence > lastRunSequenceRef.current) {
+            lastRunSequenceRef.current = event.sequence;
+            setRunSnapshot((prev: any) => prev ? { ...prev, events: [...(prev.events || []), event].slice(-500) } : prev);
+          }
+          // Durable replay events are shown in the runtime timeline; chat messages are restored from chat history.
+        } else if (message && message.type === 'approval_required') {
+          setApprovalAction(message.action);
+        } else if (message && message.type === 'user_intervention_required') {
+          setUserRequest(message.request);
+        } else if (message && message.type === 'run_evidence') {
+          setRunEvidence(message.evidence || []);
+        } else if (message && message.type === 'run_events_before') {
+          const events = message.events || [];
+          setRunSnapshot((prev: any) => {
+            if (!prev) return prev;
+            const bySequence = new Map<number, any>();
+            for (const event of [...events, ...(prev.events || [])]) {
+              if (event?.runId === prev.run?.id && typeof event.sequence === 'number') {
+                bySequence.set(event.sequence, event);
+              }
+            }
+            const merged = [...bySequence.values()].sort((a: any, b: any) => a.sequence - b.sequence);
+            return { ...prev, events: merged.slice(-500) };
+          });
+          setTimelineHasMore(events.length > 0 && events[0]?.sequence > 1);
         } else if (message && message.type === 'error') {
           // Handle error messages from service worker
           appendMessage({
@@ -356,6 +525,9 @@ const SidePanel = () => {
           });
           setInputEnabled(true);
           setShowStopButton(false);
+          // An expired/invalid approval or user request may have changed durable
+          // state on the background. Refresh it so stale cards cannot strand a run.
+          if (runIdRef.current && portRef.current) requestRunSnapshot(runIdRef.current);
         } else if (message && message.type === 'speech_to_text_result') {
           // Handle speech-to-text result
           if (message.text && setInputTextRef.current) {
@@ -385,7 +557,21 @@ const SidePanel = () => {
         }
         setInputEnabled(true);
         setShowStopButton(false);
+        if (!document.hidden && reconnectTimerRef.current === null) {
+          reconnectTimerRef.current = window.setTimeout(() => {
+            reconnectTimerRef.current = null;
+            if (!portRef.current) setupConnectionRef.current?.();
+          }, 700);
+        }
       });
+
+      if (runIdRef.current && !taskStartPendingRef.current) {
+        requestRunSnapshot(runIdRef.current);
+      } else if (sessionIdRef.current) {
+        void chrome.runtime.sendMessage({ type: 'get_latest_run_for_session', sessionId: sessionIdRef.current }, response => {
+          if (response?.ok && response.run?.id) requestRunSnapshot(response.run.id);
+        });
+      }
 
       // Setup heartbeat interval
       if (heartbeatIntervalRef.current) {
@@ -414,7 +600,7 @@ const SidePanel = () => {
       // Clear any references since connection failed
       portRef.current = null;
     }
-  }, [handleTaskState, appendMessage, stopConnection]);
+  }, [handleTaskState, appendMessage, stopConnection, readAuthorizedLocalFile, requestRunSnapshot]);
 
   // Add safety check for message sending
   const sendMessage = useCallback(
@@ -433,6 +619,35 @@ const SidePanel = () => {
     },
     [stopConnection],
   );
+
+  useEffect(() => {
+    setupConnection();
+    return () => stopConnection();
+  }, [setupConnection, stopConnection]);
+
+  useEffect(() => {
+    setupConnectionRef.current = setupConnection;
+    return () => { setupConnectionRef.current = null; };
+  }, [setupConnection]);
+
+  // Reopen the most recent non-terminal task automatically after the Side Panel remounts.
+  useEffect(() => {
+    setupConnection();
+    if (runIdRef.current || sessionIdRef.current) return;
+    chrome.runtime.sendMessage({ type: 'get_latest_active_run' }, (response: { ok?: boolean; run?: any } | undefined) => {
+      const run = response?.run;
+      if (!response?.ok || !run?.id || runIdRef.current || sessionIdRef.current) return;
+      sessionIdRef.current = run.sessionId;
+      setCurrentSessionId(run.sessionId);
+      runIdRef.current = run.id;
+      setIsHistoricalSession(false);
+      setIsFollowUpMode(!['completed', 'failed', 'cancelled'].includes(run.status));
+      void chatHistoryStore.getSession(run.sessionId).then(session => {
+        if (session) setMessages(session.messages);
+      });
+      requestRunSnapshot(run.id);
+    });
+  }, [setupConnection, requestRunSnapshot]);
 
   // Handle replay command
   const handleReplay = async (historySessionId: string): Promise<void> => {
@@ -486,6 +701,8 @@ const SidePanel = () => {
       // Reset follow-up mode and historical session flags
       setIsFollowUpMode(false);
       setIsHistoricalSession(false);
+
+      taskStartPendingRef.current = !isFollowUpMode;
 
       const userMessage = {
         actor: Actors.USER,
@@ -588,20 +805,14 @@ const SidePanel = () => {
 
   const handleSendMessage = async (text: string, displayText?: string) => {
     console.log('handleSendMessage', text);
-
-    // Trim the input text first
     const trimmedText = text.trim();
-
     if (!trimmedText) return;
 
-    // Check if the input is a command (starts with /)
     if (trimmedText.startsWith('/')) {
-      // Process command and return if it was handled
       const wasHandled = await handleCommand(trimmedText);
       if (wasHandled) return;
     }
 
-    // Block sending messages in historical sessions
     if (isHistoricalSession) {
       console.log('Cannot send messages in historical sessions');
       return;
@@ -610,61 +821,64 @@ const SidePanel = () => {
     try {
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       const tabId = tabs[0]?.id;
-      if (!tabId) {
-        throw new Error('No active tab found');
-      }
+      if (!tabId) throw new Error('No active tab found');
 
       setInputEnabled(false);
       setShowStopButton(true);
 
-      // Create a new chat session for this task if not in follow-up mode
+      let parentRunId: string | undefined;
+      let useFollowUp = isFollowUpMode;
+
       if (!isFollowUpMode) {
-        // Use display text for session title if available, otherwise use full text
         const titleText = displayText || text;
         const newSession = await chatHistoryStore.createSession(
           titleText.substring(0, 50) + (titleText.length > 50 ? '...' : ''),
         );
-        console.log('newSession', newSession);
-
-        // Store the session ID in both state and ref
         const sessionId = newSession.id;
+        const runId = crypto.randomUUID();
         setCurrentSessionId(sessionId);
         sessionIdRef.current = sessionId;
+        runIdRef.current = runId;
+      } else if (!runIdRef.current) {
+        runIdRef.current = runSnapshot?.run?.id ?? crypto.randomUUID();
+      }
+
+      if (isFollowUpMode && ['completed', 'failed', 'cancelled'].includes(runSnapshot?.run?.status)) {
+        parentRunId = runIdRef.current ?? undefined;
+        runIdRef.current = crypto.randomUUID();
+        useFollowUp = false;
       }
 
       const userMessage = {
         actor: Actors.USER,
-        content: displayText || text, // Use display text for chat UI, full text for background service
+        content: displayText || text,
         timestamp: Date.now(),
       };
-
-      // Pass the sessionId directly to appendMessage
       appendMessage(userMessage, sessionIdRef.current);
 
-      // Setup connection if not exists
-      if (!portRef.current) {
-        setupConnection();
-      }
+      if (!portRef.current) setupConnection();
 
-      // Send message using the utility function
-      if (isFollowUpMode) {
-        // Send as follow-up task
+      if (useFollowUp) {
         await sendMessage({
           type: 'follow_up_task',
           task: text,
-          taskId: sessionIdRef.current,
+          taskId: runIdRef.current,
+          runId: runIdRef.current,
+          sessionId: sessionIdRef.current,
           tabId,
+          skillIds: selectedSkillIds,
         });
-        console.log('follow_up_task sent', text, tabId, sessionIdRef.current);
       } else {
-        // Send as new task
         await sendMessage({
           type: 'new_task',
           task: text,
-          taskId: sessionIdRef.current,
+          taskId: runIdRef.current,
+          runId: runIdRef.current,
+          sessionId: sessionIdRef.current,
+          parentRunId,
           tabId,
+          skillIds: selectedSkillIds,
         });
-        console.log('new_task sent', text, tabId, sessionIdRef.current);
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -679,11 +893,11 @@ const SidePanel = () => {
       stopConnection();
     }
   };
-
   const handleStopTask = async () => {
     try {
       portRef.current?.postMessage({
         type: 'cancel_task',
+        taskId: runIdRef.current,
       });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
@@ -703,6 +917,7 @@ const SidePanel = () => {
     setMessages([]);
     setCurrentSessionId(null);
     sessionIdRef.current = null;
+    runIdRef.current = null;
     setInputEnabled(true);
     setShowStopButton(false);
     setIsFollowUpMode(false);
@@ -741,12 +956,25 @@ const SidePanel = () => {
       const fullSession = await chatHistoryStore.getSession(sessionId);
       if (fullSession && fullSession.messages.length > 0) {
         setCurrentSessionId(fullSession.id);
+        sessionIdRef.current = fullSession.id;
+        runIdRef.current = null;
+        setRunSnapshot(null);
+        setRunEvidence([]);
+        setApprovalAction(null);
+        setUserRequest(null);
         setMessages(fullSession.messages);
         setIsFollowUpMode(false);
         setIsHistoricalSession(true); // Mark this as a historical session
         console.log('history session selected', sessionId);
       }
       setShowHistory(false);
+      if (!portRef.current) {
+        setupConnection();
+      } else if (sessionIdRef.current) {
+        void chrome.runtime.sendMessage({ type: 'get_latest_run_for_session', sessionId: sessionIdRef.current }, response => {
+          if (response?.ok && response.run?.id) requestRunSnapshot(response.run.id);
+        });
+      }
     } catch (error) {
       console.error('Failed to load session:', error);
     }
@@ -778,6 +1006,11 @@ const SidePanel = () => {
         recordingTimerRef.current = null;
       }
       stopConnection();
+      if (reconnectTimerRef.current !== null) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      setupConnectionRef.current = null;
     };
   }, [stopConnection]);
 
@@ -956,7 +1189,12 @@ const SidePanel = () => {
       <div className={`flex h-screen flex-col overflow-hidden ${isDarkMode ? 'bg-zinc-950' : 'bg-white'}`}>
         <header className="flex h-12 shrink-0 items-center justify-between border-b border-zinc-200 px-3 dark:border-zinc-800">
           <div className="flex items-center gap-2">
-            {showHistory ? (
+            {!showHistory && runSnapshot?.run && (
+          <div className="border-b px-3 py-1 text-[11px] text-zinc-500">
+            任务状态：{runSnapshot.run.status} · 已记录事件 {runSnapshot.events?.length ?? 0}
+          </div>
+        )}
+        {showHistory ? (
               <button
                 type="button"
                 onClick={() => handleBackToChat(false)}
@@ -972,6 +1210,21 @@ const SidePanel = () => {
               {showHistory ? t('chat_history_title') : 'SFT AI 助手'}
             </span>
           </div>
+          {!showHistory && runSnapshot?.run && (
+            <div className="mr-2 flex items-center gap-1 text-[11px] text-zinc-500">
+              <span>{runSnapshot.run.status}</span>
+              {runSnapshot.run.status === 'running' && (
+                <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'pause_task', taskId: runSnapshot.run.id })}>
+                  {t('task_pause')}
+                </button>
+              )}
+              {['paused', 'interrupted'].includes(runSnapshot.run.status) && !runSnapshot.checkpoint?.pendingAction && !runSnapshot.checkpoint?.pendingUserRequest && (!runSnapshot.checkpoint?.pendingFileRead || runSnapshot.run.status === 'interrupted') && (
+                <button type="button" className="rounded border px-2 py-1" onClick={() => portRef.current?.postMessage({ type: 'resume_task', taskId: runSnapshot.run.id })}>
+                  {t('task_resume')}
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-1">
             {!showHistory && (
               <>
@@ -1067,11 +1320,70 @@ const SidePanel = () => {
                     </div>
                   ) : (
                     <>
+                      {runSnapshot?.checkpoint?.plan?.length > 0 && (
+                        <TaskPlanPanel steps={runSnapshot.checkpoint.plan} />
+                      )}
+                      {runSnapshot?.events?.length > 0 && (
+                        <TaskTimeline
+                          events={runSnapshot.events}
+                          hasMore={timelineHasMore}
+                          onLoadMore={() => {
+                            const first = runSnapshot.events[0]?.sequence;
+                            if (first && first > 1) {
+                              portRef.current?.postMessage({
+                                type: 'get_run_events_before',
+                                runId: runSnapshot.run.id,
+                                beforeSequence: first,
+                                limit: 100,
+                              });
+                            }
+                          }}
+                        />
+                      )}
+                      {runEvidence.length > 0 && <EvidenceList items={runEvidence} />}
                       <MessageList messages={messages} isDarkMode={isDarkMode} running={showStopButton} />
                       <div ref={messagesEndRef} />
                     </>
                   )}
                 </div>
+                {userRequest && (
+                  <UserRequestCard
+                    request={userRequest}
+                    onSubmit={answer => {
+                      portRef.current?.postMessage({ type: 'user_intervention_response', runId: userRequest.runId, nonce: userRequest.nonce, answer });
+                      setUserRequest(null);
+                    }}
+                  />
+                )}
+                {approvalAction && (
+                  <ApprovalCard
+                    action={approvalAction}
+                    onApprove={() => {
+                      portRef.current?.postMessage({type:'approve_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
+                      setApprovalAction(null);
+                    }}
+                    onReject={() => {
+                      portRef.current?.postMessage({type:'reject_action',runId:approvalAction.runId,nonce:approvalAction.nonce,parameterHash:approvalAction.parameterHash});
+                      setApprovalAction(null);
+                    }}
+                  />
+                )}
+                {manualSkills.length > 0 && (
+                  <div className="shrink-0 border-t px-3 py-2 text-xs">
+                    <div className="mb-1 text-zinc-500">本次任务 Skill</div>
+                    <div className="flex flex-wrap gap-2">
+                      {manualSkills.map(skill => (
+                        <button
+                          key={skill.id}
+                          type="button"
+                          className={`rounded-full border px-2 py-1 ${selectedSkillIds.includes(skill.id) ? 'bg-zinc-900 text-white' : ''}`}
+                          onClick={() => setSelectedSkillIds(prev => prev.includes(skill.id) ? prev.filter(id => id !== skill.id) : [...prev, skill.id])}>
+                          {skill.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* 输入区:固定在底部 */}
                 <div
                   className={`shrink-0 border-t p-2 ${isDarkMode ? 'border-zinc-800 dark:bg-zinc-950' : 'border-zinc-200 bg-white/80'} shadow-sm backdrop-blur-sm`}>

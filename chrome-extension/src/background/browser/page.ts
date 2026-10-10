@@ -1063,18 +1063,40 @@ export default class Page {
     const cssSelector = element.enhancedCssSelectorForElement(this._config.includeDynamicAttributes);
 
     try {
-      // Try CSS selector first
-      let elementHandle: ElementHandle | null = await currentFrame.$(cssSelector);
+      // Prefer an unambiguous CSS locator. If it is ambiguous, fall back to XPath.
+      const cssCount = await currentFrame.evaluate(
+        selector => document.querySelectorAll(selector).length,
+        cssSelector,
+      ).catch(() => 0);
+      let elementHandle: ElementHandle | null = cssCount === 1 ? await currentFrame.$(cssSelector) : null;
+      if (cssCount > 1) {
+        logger.warning(`Locator matched ${cssCount} elements; attempting XPath fallback`);
+      }
 
-      // If CSS selector failed, try XPath
       if (!elementHandle) {
         const xpath = element.xpath;
         if (xpath) {
           try {
             logger.info('Trying XPath selector:', xpath);
             const fullXpath = xpath.startsWith('/') ? xpath : `/${xpath}`;
-            const xpathSelector = `::-p-xpath(${fullXpath})`;
-            elementHandle = await currentFrame.$(xpathSelector);
+            const xpathCount = await currentFrame.evaluate(
+              expression => {
+                const result = document.evaluate(
+                  expression,
+                  document,
+                  null,
+                  XPathResult.ORDERED_NODE_SNAPSHOT_TYPE,
+                  null,
+                );
+                return result.snapshotLength;
+              },
+              fullXpath,
+            ).catch(() => 0);
+            if (xpathCount === 1) {
+              elementHandle = await currentFrame.$(`::-p-xpath(${fullXpath})`);
+            } else if (xpathCount > 1) {
+              logger.warning(`XPath matched ${xpathCount} elements`);
+            }
           } catch (xpathError) {
             logger.error('Failed to locate element using XPath:', xpathError);
           }
@@ -1096,6 +1118,132 @@ export default class Page {
     }
 
     return null;
+  }
+
+  async getObservationSignature(): Promise<string> {
+    const url = this.url();
+    if (!this._puppeteerPage) return url;
+    const text = await this._puppeteerPage.evaluate(() => (document.body?.innerText || '').slice(0, 12000));
+    const data = new TextEncoder().encode(url + '\n' + text);
+    const digest = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(digest)).map(value => value.toString(16).padStart(2, '0')).join('');
+  }
+
+  async verifyClickEffect(index: number, initialUrl: string): Promise<boolean> {
+    const currentUrl = this.url();
+    if (currentUrl !== initialUrl) return true;
+    try {
+      const state = await this.getState(false);
+      return !state.selectorMap.has(index);
+    } catch {
+      return false;
+    }
+  }
+
+  async verifyDropdownSelection(index: number, expectedText: string): Promise<boolean> {
+    const selectorMap = this.getSelectorMap();
+    const element = selectorMap?.get(index);
+    if (!element) return false;
+    const handle = await this.locateElement(element);
+    if (!handle) return false;
+    return handle.evaluate((node, expected) => node instanceof HTMLSelectElement && node.selectedOptions.length > 0 && node.selectedOptions[0].text.trim() === expected, expectedText);
+  }
+
+  async getInputValue(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => {
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return el.value;
+      if (el instanceof HTMLElement && el.isContentEditable) return el.textContent ?? '';
+      return null;
+    });
+  }
+
+  async getSelectedOptionText(index: number): Promise<string | null> {
+    const state = await this.getState(false);
+    const node = state.selectorMap.get(index);
+    if (!node) return null;
+    const element = await this.locateElement(node);
+    if (!element) return null;
+    return element.evaluate(el => el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text?.trim() ?? null) : null);
+  }
+
+  async getInputPreview(elementNode: DOMElementNode, proposedValue: string): Promise<string> {
+    if (!this._puppeteerPage) throw new Error('Puppeteer is not connected');
+    const element = await this.locateElement(elementNode);
+    if (!element) return '目标输入框已失效';
+    return element.evaluate((el, value) => {
+      const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      const type = (control.getAttribute('type') || control.tagName).toLowerCase();
+      const id = control.getAttribute('id') || '';
+      const externalLabel = id
+        ? Array.from(document.querySelectorAll('label')).find(label => label.htmlFor === id)?.innerText
+        : undefined;
+      const labelText = externalLabel || control.closest('label')?.textContent ||
+        control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
+        control.getAttribute('name') || control.getAttribute('id') || '输入框';
+      const label = String(labelText).replace(/\s+/g, ' ').trim().slice(0, 80) || '输入框';
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|cvc|card[_-]?number|credit[_-]?card|bank[_-]?account|security[_-]?code|social[_-]?security|national[_-]?id|身份证|证件号码|银行卡号|信用卡号|银行账号|验证码|密码|安全码)/i;
+      const sensitive = type === 'password' || secretPattern.test([
+        label, control.getAttribute('name') || '', control.getAttribute('autocomplete') || '', type,
+      ].join(' '));
+      let preview = value;
+      if (sensitive) preview = '[已隐藏，' + value.length + ' 个字符]';
+      else if (preview.length > 500) preview = preview.slice(0, 500) + '…';
+      return '字段：' + label + '\n拟填入：' + (preview || '（空字符串）') + '\n字段类型：' + type;
+    }, proposedValue);
+  }
+
+  async getFormPreview(elementNode: DOMElementNode): Promise<string> {
+    if (!this._puppeteerPage) throw new Error('Puppeteer is not connected');
+    const element = await this.locateElement(elementNode);
+    if (!element) return '无法读取待提交表单：目标元素已失效';
+
+    return element.evaluate(el => {
+      const target = el as HTMLElement;
+      const form = (target as HTMLButtonElement).form ?? target.closest('form');
+      if (!form) return '未识别到关联表单；请在当前页面核对操作目标后再决定是否批准';
+
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|cvc|card[_-]?number|credit[_-]?card|bank[_-]?account|security[_-]?code|social[_-]?security|national[_-]?id|身份证|证件号码|银行卡号|信用卡号|银行账号|验证码|密码|安全码)/i;
+      const controls = Array.from(form.querySelectorAll(
+        'input:not([type="hidden"]):not([type="submit"]):not([type="button"]), textarea, select, [contenteditable="true"]',
+      )).slice(0, 24);
+
+      if (!controls.length) return '关联表单未发现可预览字段';
+      return controls.map((control, index) => {
+        const input = control as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+        const id = control.getAttribute('id') || '';
+        const externalLabel = id
+          ? Array.from(document.querySelectorAll('label')).find(label => label.htmlFor === id)?.innerText
+          : undefined;
+        const labelText = externalLabel || control.closest('label')?.textContent ||
+          control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
+          control.getAttribute('name') || control.getAttribute('id') || `字段 ${index + 1}`;
+        const label = String(labelText).replace(/\s+/g, ' ').trim().slice(0, 80) || `字段 ${index + 1}`;
+        const type = (control.getAttribute('type') || control.tagName).toLowerCase();
+        let value = control instanceof HTMLSelectElement
+          ? Array.from(control.selectedOptions).map(option => option.textContent || '').join(', ')
+          : ('value' in control ? String((control as HTMLInputElement).value || '') : String(control.textContent || ''));
+        const sensitive = type === 'password' || secretPattern.test([
+          label, control.getAttribute('name') || '', control.getAttribute('autocomplete') || '', type,
+        ].join(' '));
+        if (sensitive && value) value = '[已隐藏，' + value.length + ' 个字符]';
+        if (value.length > 160) value = value.slice(0, 160) + '…';
+        return (index + 1) + '. ' + label + '：' + (value || '（空）');
+      }).join('\n');
+    });
+  }
+
+  async verifyInputValue(elementNode: DOMElementNode, expected: string): Promise<boolean> {
+    const element = await this.locateElement(elementNode);
+    if (!element) return false;
+    return element.evaluate((el, value) => {
+      const actual = 'value' in el ? String((el as HTMLInputElement).value ?? '') : (el.textContent ?? '');
+      return actual === value;
+    }, expected);
   }
 
   async inputTextElementNode(useVision: boolean, elementNode: DOMElementNode, text: string): Promise<void> {
@@ -1157,10 +1305,13 @@ export default class Page {
           if (el instanceof HTMLElement) {
             el.textContent = '';
           }
-          if ('value' in el) {
-            (el as HTMLInputElement).value = '';
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, '');
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, '');
           }
-          // Dispatch events
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         });
@@ -1170,12 +1321,15 @@ export default class Page {
       } else {
         // Use direct value setting for other types of elements
         await element.evaluate((el, value) => {
-          if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-            el.value = value;
+          if (el instanceof HTMLInputElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+            setter?.call(el, value);
+          } else if (el instanceof HTMLTextAreaElement) {
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+            setter?.call(el, value);
           } else if (el instanceof HTMLElement && el.isContentEditable) {
             el.textContent = value;
           }
-          // Dispatch events
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
         }, text);
@@ -1317,6 +1471,7 @@ export default class Page {
         logger.info('Failed to click element, trying again', error);
         try {
           await element.evaluate(el => (el as HTMLElement).click());
+          await this._checkAndHandleNavigation();
         } catch (secondError) {
           // if URLNotAllowedError, throw it
           if (secondError instanceof URLNotAllowedError) {
@@ -1353,6 +1508,27 @@ export default class Page {
   getDomElementByIndex(index: number): DOMElementNode | null {
     const selectorMap = this.getSelectorMap();
     return selectorMap.get(index) || null;
+  }
+
+  async isFormSubmitControl(elementNode: DOMElementNode): Promise<boolean> {
+    if (!this._puppeteerPage) return false;
+    const element = await this.locateElement(elementNode);
+    if (!element) return false;
+    return element.evaluate(el => {
+      if (el instanceof HTMLButtonElement) return Boolean(el.form && el.type === 'submit');
+      if (el instanceof HTMLInputElement) return Boolean(el.form && ['submit', 'image'].includes(el.type));
+      return false;
+    });
+  }
+
+  async isDownloadLink(elementNode: DOMElementNode): Promise<boolean> {
+    if (!this._puppeteerPage) return false;
+    const element = await this.locateElement(elementNode);
+    if (!element) return Boolean(elementNode.attributes?.download);
+    return element.evaluate(el => {
+      if (!(el instanceof HTMLAnchorElement)) return el.hasAttribute('download');
+      return el.hasAttribute('download') || Boolean(el.download);
+    });
   }
 
   isFileUploader(elementNode: DOMElementNode, maxDepth = 3, currentDepth = 0): boolean {

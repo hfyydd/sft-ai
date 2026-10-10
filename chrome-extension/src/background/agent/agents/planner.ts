@@ -17,9 +17,19 @@ import {
   RequestCancelledError,
 } from './errors';
 import { filterExternalContent } from '../messages/utils';
+import { normalizePlanSteps, validatePlanSteps } from '../plan';
+import { taskRunStore } from '@extension/storage';
 const logger = createLogger('PlannerAgent');
 
 // Define Zod schema for planner output
+const planStepSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1),
+  successCriteria: z.string().min(1),
+  status: z.enum(['queued','running','completed','blocked','skipped']),
+  evidenceIds: z.array(z.string()).default([]),
+});
+
 export const plannerOutputSchema = z.object({
   observation: z.string(),
   challenges: z.string(),
@@ -32,6 +42,7 @@ export const plannerOutputSchema = z.object({
     }),
   ]),
   next_steps: z.string(),
+  steps: z.array(planStepSchema).default([]),
   final_answer: z.string(),
   reasoning: z.string(),
   web_task: z.union([
@@ -94,8 +105,11 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       let challenges = filterExternalContent(modelOutput.challenges);
       let reasoning = filterExternalContent(modelOutput.reasoning);
 
+      const steps = normalizePlanSteps(modelOutput.steps, modelOutput.next_steps);
+      validatePlanSteps(steps);
       const cleanedPlan: PlannerOutput = {
         ...modelOutput,
+        steps,
         observation,
         challenges,
         reasoning,
@@ -114,7 +128,20 @@ export class PlannerAgent extends BaseAgent<typeof plannerOutputSchema, PlannerO
       // Agent Loop v2: 规划器把关键事实写入工作记忆
       const memoryWrite = (cleanedPlan.memory_write || '').trim();
       if (memoryWrite) {
-        this.context.taskMemory.add(memoryWrite);
+        const referencedIds = [...memoryWrite.matchAll(/(?:evidence|证据)\s*(?:ids?)?\s*[:：]\s*([A-Za-z0-9_, -]+)/gi)]
+          .flatMap(match => match[1].split(/[，,\s]+/).filter(Boolean));
+        const evidence = await taskRunStore.getEvidence(this.context.taskId, 500).catch(() => []);
+        const knownEvidenceIds = new Set(evidence.map(item => item.id));
+        const evidenceIds = [...new Set(referencedIds.filter(id => knownEvidenceIds.has(id)))];
+        const invalidEvidenceIds = referencedIds.filter(id => !knownEvidenceIds.has(id));
+        if (invalidEvidenceIds.length) {
+          await taskRunStore.appendEvent(this.context.taskId, 'memory.invalid_evidence_reference', {
+            invalidEvidenceIds,
+            count: invalidEvidenceIds.length,
+          }).catch(() => undefined);
+        }
+        const targetStep = this.context.plan.find(step => step.status === 'running')?.id;
+        this.context.taskMemory.add(memoryWrite, evidenceIds, targetStep, evidenceIds.length ? 'high' : 'medium');
       }
 
       // If task is done, emit the final answer; otherwise emit next steps

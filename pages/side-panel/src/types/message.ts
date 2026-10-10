@@ -29,9 +29,25 @@ export const ACTOR_PROFILES = {
     icon: 'icons/manager.svg',
     iconBackground: '#9C27B0',
   },
+  verifier: { name: '完成核验', icon: 'icons/validator.svg', iconBackground: '#EC407A' },
   evaluator: {
     name: '评估',
     icon: 'icons/evaluator.svg',
     iconBackground: '#795548',
   },
 } as const;
+
+export interface RunCommandMessage {
+  type: 'get_run_snapshot' | 'subscribe_run' | 'get_run_events' | 'get_run_events_before' | 'get_run_evidence' | 'pause_task' | 'resume_task' | 'cancel_task';
+  runId?: string;
+  afterSequence?: number;
+  beforeSequence?: number;
+  limit?: number;
+}
+export interface ApprovalCommandMessage {
+  type: 'approve_action' | 'reject_action';
+  runId: string;
+  nonce: string;
+  parameterHash: string;
+}
+
