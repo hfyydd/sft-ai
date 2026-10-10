@@ -214,7 +214,13 @@ export async function resolveApproval(input: {
       const resolve = pending.get(input.nonce);
       pending.delete(input.nonce);
       resolve?.(false);
-      await taskRunStore.updateStatus(input.runId, 'waiting_user');
+      // The original confirmation is no longer valid. Mark the run recoverable so
+      // the UI can restart the operator and request a fresh approval for the new context.
+      await taskRunStore.updateStatus(input.runId, 'interrupted');
+      await taskRunStore.appendEvent(input.runId, 'runtime.recovery_required', {
+        reason: 'approval_context_changed',
+        next: 'resume_and_reapprove',
+      }).catch(() => undefined);
       return false;
     }
   }
