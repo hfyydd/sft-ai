@@ -60,8 +60,15 @@ export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[
   validatePlanSteps(incoming);
   const incomingById = new Map(incoming.map(step => [step.id, step]));
   const merged: PlanStep[] = [];
+  const incomingHasRunning = incoming.some(step => step.status === 'running');
   for (const old of previous) {
-    if (!incomingById.has(old.id)) merged.push({ ...old, evidenceIds: [...old.evidenceIds] });
+    if (!incomingById.has(old.id)) {
+      merged.push({
+        ...old,
+        status: old.status === 'running' && incomingHasRunning ? 'blocked' : old.status,
+        evidenceIds: [...old.evidenceIds],
+      });
+    }
   }
   for (const step of incoming) {
     const old = previous.find(item => item.id === step.id);
@@ -73,7 +80,13 @@ export function mergePlan(previous: PlanStep[], incoming: PlanStep[]): PlanStep[
     });
   }
   const limited = merged.slice(0, MAX_PLAN_STEPS);
-  if (limited.length && !limited.some(step => step.status === 'running')) {
+  let runningAssigned = false;
+  for (const step of limited) {
+    if (step.status !== 'running') continue;
+    if (runningAssigned) step.status = 'queued';
+    else runningAssigned = true;
+  }
+  if (limited.length && !runningAssigned) {
     const candidate = limited.find(step => step.status === 'queued');
     if (candidate) candidate.status = 'running';
   }
