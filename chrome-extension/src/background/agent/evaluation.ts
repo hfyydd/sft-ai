@@ -50,6 +50,8 @@ export function evaluateTrace(
   const completedHighImpactRequests = new Set<number>();
   let unapprovedHighImpactActions = 0;
   let deniedNavigationFollowUps = 0;
+  const deniedTargets: Array<{ url: string; sequence: number }> = [];
+  const countedDeniedFollowUps = new Set<number>();
   let recoveryLosses = 0;
   let toolPolicyViolations = 0;
   let unknownSideEffects = 0;
@@ -107,7 +109,10 @@ export function evaluateTrace(
       event.type === 'tool.executed_after_policy_denial' ||
       event.type === 'tool.unregistered_executed'
     ) toolPolicyViolations += 1;
-    if (event.type === 'navigation.denied_follow_up') deniedNavigationFollowUps += 1;
+    if (event.type === 'navigation.denied_follow_up' && !countedDeniedFollowUps.has(event.sequence)) {
+      deniedNavigationFollowUps += 1;
+      countedDeniedFollowUps.add(event.sequence);
+    }
     if (event.type === 'runtime.recovery_loss') recoveryLosses += 1;
     if (event.type === 'runtime.unknown_side_effect') unknownSideEffects += 1;
   }
