@@ -552,6 +552,12 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             actionName === 'send_keys' || actionName === 'go_back'
               ? await currentPage.getObservationSignature()
               : undefined;
+          const formFields = actionName === 'fill_form' && parsedActionArgs.success
+            ? (normalizedActionArgs as { fields?: Array<{ index: number; value: string }> }).fields
+            : undefined;
+          const expectedFieldHashes = Array.isArray(formFields)
+            ? await Promise.all(formFields.map(async field => ({ index: field.index, valueHash: await hashActionArgs(field.value) })))
+            : undefined;
           const pendingWrite = {
             toolName: actionName,
             parameterHash: actionParameterHash,
@@ -564,6 +570,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             startedAt: Date.now(),
             index: indexArg ?? undefined,
             expectedValueHash: expectedValue ? await hashActionArgs(expectedValue) : undefined,
+            expectedFieldHashes,
             beforeObservationSignature,
             phase: 'executing' as const,
           };
