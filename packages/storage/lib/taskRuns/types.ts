@@ -38,6 +38,8 @@ export interface PendingAction {
   runId: string;
   toolName: string;
   argsSummary: string;
+  /** Read-only summary of submitted form fields; secret controls are masked at capture time. */
+  previewSummary?: string;
   tabId?: number;
   url?: string;
   targetUrl?: string;
