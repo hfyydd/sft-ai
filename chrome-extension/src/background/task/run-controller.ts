@@ -344,6 +344,18 @@ export class RunController {
     }, 'runtime.replay_exception');
   }
 
+  private async detachExecutorForRecovery() {
+    const executor = this.executor;
+    this.executorSubscription?.();
+    this.executorSubscription = null;
+    this.executor = null;
+    if (!executor) return;
+    // Abort model/browser waits after unsubscribing so the old loop cannot
+    // overwrite the durable interrupted state with a stale cancellation event.
+    await executor.cancel().catch(() => undefined);
+    await executor.cleanup().catch(() => undefined);
+  }
+
   async handleTabClosed(tabId: number) {
     const expected = this.expectedTabClosures.delete(tabId);
     const runId = this.activeRunId;
@@ -368,24 +380,14 @@ export class RunController {
         tabId,
         error: '关闭操作后没有可供继续执行且符合 URL 策略的标签页',
       });
-      if (this.executor) {
-        await this.executor.cleanup().catch(() => undefined);
-        this.executorSubscription?.();
-        this.executorSubscription = null;
-        this.executor = null;
-      }
+      await this.detachExecutorForRecovery();
       return;
     }
 
     if (run.activeTabId !== tabId) return;
     await taskRunStore.updateStatus(runId, 'interrupted');
     await taskRunStore.appendEvent(runId, 'runtime.tab_closed', { tabId });
-    if (this.executor) {
-      await this.executor.cleanup().catch(() => undefined);
-      this.executorSubscription?.();
-      this.executorSubscription = null;
-      this.executor = null;
-    }
+    await this.detachExecutorForRecovery();
   }
 
   async handleDebuggerDetached(tabId: number, reason: string) {
