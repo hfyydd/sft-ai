@@ -30,6 +30,7 @@ export interface PendingWrite {
   startedAt: number;
   index?: number;
   expectedValueHash?: string;
+  expectedFieldHashes?: Array<{ index: number; valueHash: string }>;
   beforeObservationSignature?: string;
 }
 
