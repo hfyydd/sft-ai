@@ -614,7 +614,16 @@ export class ActionBuilder {
           throw new Error(t('act_errors_elementNotExist', [input.index.toString()]));
         }
         if (needsApproval('input_text', intent, input)) {
-          const approved = await requestApproval({ runId: this.context.taskId, toolName: 'input_text', args: input, tabId: page.tabId, url: page.url(), reason: intent });
+          const previewSummary = await page.getInputPreview(elementNode, input.text).catch(() => '无法生成输入预览；请先核对当前字段。');
+          const approved = await requestApproval({
+            runId: this.context.taskId,
+            toolName: 'input_text',
+            args: input,
+            tabId: page.tabId,
+            url: page.url(),
+            reason: intent,
+            previewSummary,
+          });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
 
@@ -1286,7 +1295,16 @@ export class ActionBuilder {
         logger.debug(`Attempting to select '${input.text}' using xpath: ${elementNode.xpath}`);
 
         if (needsApproval('select_dropdown_option', intent, input, elementNode.getAllTextTillNextClickableElement(3))) {
-          const approved = await requestApproval({ runId: this.context.taskId, toolName: 'select_dropdown_option', args: input, tabId: page.tabId, url: page.url(), reason: intent });
+          const previewSummary = await page.getInputPreview(elementNode, input.text).catch(() => '无法生成下拉选项预览；请先核对当前字段。');
+          const approved = await requestApproval({
+            runId: this.context.taskId,
+            toolName: 'select_dropdown_option',
+            args: input,
+            tabId: page.tabId,
+            url: page.url(),
+            reason: intent,
+            previewSummary,
+          });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
 
