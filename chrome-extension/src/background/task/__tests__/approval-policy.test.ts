@@ -4,6 +4,7 @@ import { approvalMatchesContext, classifyActionRisk, requiresApproval } from '..
 describe('approval policy matrix', () => {
   it.each([
     ['read_page', {}, 'read'],
+    ['read_evidence', { evidenceIds: ['e1'] }, 'read'],
     ['switch_tab', {}, 'navigate'],
     ['input_text', { text: 'hello' }, 'interaction'],
     ['click_element', { intent: '提交表单' }, 'write'],
