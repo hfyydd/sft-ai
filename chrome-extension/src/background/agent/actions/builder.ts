@@ -526,6 +526,7 @@ export class ActionBuilder {
           }
         }
         if (needsApproval('click_element', intent, input, elementRiskText) || crossDomainLink) {
+          const previewSummary = await page.getFormPreview(elementNode).catch(() => '');
           const approved = await requestApproval({
             runId: this.context.taskId,
             toolName: 'click_element',
@@ -534,6 +535,7 @@ export class ActionBuilder {
             url: page.url(),
             targetUrl: linkedUrl || undefined,
             reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : (intent || elementText),
+            previewSummary: previewSummary || undefined,
           });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
         }
