@@ -538,6 +538,15 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         const actionParameterHash = await hashActionArgs(normalizedActionArgs);
         let riskText = '';
         let crossDomainLink = false;
+        let crossDomainNavigation = false;
+        if (actionName === 'go_to_url' && normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs) {
+          try {
+            crossDomainNavigation =
+              new URL(String((normalizedActionArgs as { url: unknown }).url)).hostname !== new URL(browserState.url).hostname;
+          } catch {
+            crossDomainNavigation = true;
+          }
+        }
         if (actionName === 'click_element' && indexArg !== null) {
           const targetNode = browserState.selectorMap.get(indexArg);
           if (targetNode) {
@@ -560,6 +569,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           policyRequiresApproval(actionName, normalizedActionArgs, riskText) ||
           ['close_tab', 'open_tab', 'search_google'].includes(actionName) ||
           crossDomainLink ||
+          crossDomainNavigation ||
           (actionName === 'send_keys' && /enter|return/i.test(keys));
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
