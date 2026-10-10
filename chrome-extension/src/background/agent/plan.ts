@@ -16,17 +16,20 @@ export function normalizePlanSteps(steps: PlanStep[] | undefined, nextSteps: str
     }));
 
   if (source.length > MAX_PLAN_STEPS) throw new Error('Plan exceeds maximum step count');
-  const normalized = source.map((step, index) => ({
-    ...step,
-    status: step.status === 'completed' || step.status === 'skipped' || step.status === 'blocked'
-      ? step.status
-      : index === 0
-        ? 'running' as const
-        : 'queued' as const,
-    evidenceIds: [...new Set(step.evidenceIds ?? [])],
-  }));
-  const firstActive = normalized.find(step => step.status === 'running' || step.status === 'queued');
-  if (firstActive && !normalized.some(step => step.status === 'running')) firstActive.status = 'running';
+  let hasRunning = false;
+  const normalized = source.map(step => {
+    const allowed = ['queued', 'running', 'completed', 'blocked', 'skipped'] as const;
+    const status = allowed.includes(step.status) ? step.status : 'queued';
+    if (status === 'running') {
+      if (hasRunning) return { ...step, status: 'queued' as const, evidenceIds: [...new Set(step.evidenceIds ?? [])] };
+      hasRunning = true;
+    }
+    return { ...step, status, evidenceIds: [...new Set(step.evidenceIds ?? [])] };
+  });
+  if (!hasRunning) {
+    const firstQueued = normalized.find(step => step.status === 'queued');
+    if (firstQueued) firstQueued.status = 'running';
+  }
   return normalized;
 }
 
