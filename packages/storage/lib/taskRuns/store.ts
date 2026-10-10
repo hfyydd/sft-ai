@@ -118,7 +118,35 @@ export class TaskRunStore {
     return out;
   }
 
-  async getSnapshot(runId:string,after=0):Promise<TaskRunSnapshot>{const run=await this.getRun(runId);if(!run)throw new Error('Unknown task run');return{run,checkpoint:await this.getCheckpoint(runId),events:await this.getEvents(runId,after)};}
+  async getRecentEvents(runId: string, limit = 500): Promise<TaskRunEvent[]> {
+    const db = await openTaskRunDatabase();
+    const result = await new Promise<TaskRunEvent[]>((resolve, reject) => {
+      const values: TaskRunEvent[] = [];
+      const range = IDBKeyRange.bound([runId, 0], [runId, Number.MAX_SAFE_INTEGER]);
+      const request = db.transaction('events').objectStore('events').openCursor(range, 'prev');
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor || values.length >= limit) {
+          resolve(values.reverse());
+          return;
+        }
+        values.push(cursor.value as TaskRunEvent);
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error ?? new Error('Failed to read recent task events'));
+    });
+    db.close();
+    return result;
+  }
+
+  async getSnapshot(runId: string, after = 0): Promise<TaskRunSnapshot> {
+    const run = await this.getRun(runId);
+    if (!run) throw new Error('Unknown task run');
+    const events = after > 0
+      ? await this.getEvents(runId, after)
+      : await this.getRecentEvents(runId);
+    return { run, checkpoint: await this.getCheckpoint(runId), events };
+  }
   async inheritContext(parentRunId:string, childRunId:string, activeTabId?:number) {
     const parent = await this.getRun(parentRunId);
     const child = await this.getRun(childRunId);
