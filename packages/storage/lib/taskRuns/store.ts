@@ -246,10 +246,12 @@ export class TaskRunStore {
       const db=await openTaskRunDatabase();
       const batch=await new Promise<EvidenceRecord[]>((resolve,reject)=>{const a:EvidenceRecord[]=[];const q=db.transaction('evidence').objectStore('evidence').index('runId').openCursor(IDBKeyRange.only(current!.id));q.onsuccess=()=>{const cur=q.result;if(!cur||a.length>=limit){resolve(a);return;}a.push(cur.value);cur.continue();};q.onerror=()=>reject(q.error);});
       db.close();
-      for(const item of batch) if(!seen.has(item.id)){seen.add(item.id);out.push(item);}
+      for (const item of batch.sort((a, b) => b.capturedAt - a.capturedAt)) {
+        if (!seen.has(item.id)) { seen.add(item.id); out.push(item); }
+      }
       current=current.parentRunId?await this.getRun(current.parentRunId):undefined;
     }
-    return out.slice(0,limit);
+    return out.sort((a, b) => a.capturedAt - b.capturedAt).slice(-limit);
   }
 
   async listAllRuns(): Promise<TaskRun[]> {
