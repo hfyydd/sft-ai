@@ -69,34 +69,34 @@ abstract class BasePrompt {
     const evidence = await taskRunStore.getEvidence(context.taskId, 12).catch(() => []);
     const evidenceSection = evidence.length
       ? wrapUntrustedContent(
-          '\\n[Persistent evidence index / 持久证据索引]\\n' + evidence.map(e =>
+          '\n[Persistent evidence index / 持久证据索引]\n' + evidence.map(e =>
             '- ' + e.id + ': ' + e.source + ' | ' + e.title + ' | ' + e.url + ' | ' + new Date(e.capturedAt).toISOString() +
             (e.pageNumber ? ' | page=' + e.pageNumber : '')
-          ).join('\\n') + '\\n',
+          ).join('\n') + '\n',
         )
       : '';
     const planSection = context.plan.length
-      ? '\\n[Runtime-owned task plan / 运行时任务计划]\n' +
+      ? '\n[Runtime-owned task plan / 运行时任务计划]\n' +
         wrapUntrustedContent(JSON.stringify(context.plan.map(step => ({
           id: step.id,
           title: step.title,
           successCriteria: step.successCriteria,
           status: step.status,
           evidenceIds: step.evidenceIds,
-        })), null, 2)) + '\\n'
+        })), null, 2)) + '\n'
       : '';
     const pendingWriteSection = context.pendingWrite
-      ? '\\n[Pending browser write / 尚待核验的浏览器写操作]\n' +
+      ? '\n[Pending browser write / 尚待核验的浏览器写操作]\n' +
         wrapUntrustedContent(JSON.stringify({
           toolName: context.pendingWrite.toolName,
           tabId: context.pendingWrite.tabId,
           url: context.pendingWrite.url,
           startedAt: context.pendingWrite.startedAt,
           parameterHash: context.pendingWrite.parameterHash,
-        })) + '\\n'
+        })) + '\n'
       : '';
     const approvalSection = context.approvedAction
-      ? '\\n[Approved single-use action / 一次性批准动作]\n' +
+      ? '\n[Approved single-use action / 一次性批准动作]\n' +
         wrapUntrustedContent(JSON.stringify({
           toolName: context.approvedAction.toolName,
           argsSummary: context.approvedAction.argsSummary,
@@ -105,10 +105,10 @@ abstract class BasePrompt {
           targetUrl: context.approvedAction.targetUrl,
           expiresAt: context.approvedAction.expiresAt,
           parameterHash: context.approvedAction.parameterHash,
-        })) + '\\n'
+        })) + '\n'
       : '';
     const memorySection = memoryBlock
-      ? `\\n[Task memory / 工作记忆 - 关键事实来自此前步骤]\\n${wrapUntrustedContent(memoryBlock)}\\n`
+      ? `\n[Task memory / 工作记忆 - 关键事实来自此前步骤]\n${wrapUntrustedContent(memoryBlock)}\n`
       : '';
 
     const currentTab = wrapUntrustedContent(
