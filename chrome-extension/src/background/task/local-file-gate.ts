@@ -19,6 +19,15 @@ export async function requestLocalPdfBytes(input: {
   const cached = availableBytes.get(cachedKey);
   if (cached && cached.expiresAt >= Date.now()) {
     availableBytes.delete(cachedKey);
+    const checkpoint = await taskRunStore.getCheckpoint(input.runId).catch(() => undefined);
+    if (checkpoint?.pendingFileRead?.path === input.path) {
+      const event = await taskRunStore.appendEvent(input.runId, 'file.read_cache_consumed', {
+        requestId: checkpoint.pendingFileRead.requestId,
+        bytes: cached.bytes.byteLength,
+      });
+      await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingFileRead: undefined });
+      await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
+    }
     return new Uint8Array(cached.bytes);
   }
   if (cached) availableBytes.delete(cachedKey);
@@ -130,25 +139,31 @@ export async function resolveLocalPdfBytes(input: {
     return true;
   }
 
-  const event = await taskRunStore.appendEvent(input.runId, 'file.read_completed', {
-    requestId: input.requestId,
-    bytes: bytes.byteLength,
-  });
-  await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingFileRead: undefined });
-  await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
-
   const waiter = pending.get(input.requestId);
   if (waiter) {
+    const event = await taskRunStore.appendEvent(input.runId, 'file.read_completed', {
+      requestId: input.requestId,
+      bytes: bytes.byteLength,
+    });
+    await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingFileRead: undefined });
+    await taskRunStore.updateStatus(input.runId, 'running').catch(() => undefined);
     pending.delete(input.requestId);
     waiter.resolve(bytes);
   } else {
-    // A service-worker restart destroyed the Promise which initiated the read.
-    // Keep the result in memory for the immediately restarted Executor only.
+    // If the worker restarted, leave the request in the checkpoint until the
+    // recovered executor consumes the in-memory byte handoff. If the worker
+    // restarts again before then, the Side Panel will safely reread the file.
     availableBytes.set(cacheKey(input.runId, request.path), {
       path: request.path,
       expiresAt: Math.min(request.expiresAt, Date.now() + 60_000),
       bytes: new Uint8Array(bytes),
     });
+    const event = await taskRunStore.appendEvent(input.runId, 'file.read_available_for_recovery', {
+      requestId: input.requestId,
+      bytes: bytes.byteLength,
+    });
+    await taskRunStore.saveCheckpoint({ ...checkpoint, sequence: event.sequence, pendingFileRead: request });
+    await taskRunStore.updateStatus(input.runId, 'interrupted').catch(() => undefined);
   }
   return true;
 }
