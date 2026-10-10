@@ -203,7 +203,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg?.type === 'debug_pdf_extract' && msg.url) {
     if (sender.id !== chrome.runtime.id || sender.url !== SIDE_PANEL_URL) return false;
-    extractPdfTextFromUrl(msg.url, { cMapUrl: chrome.runtime.getURL('cmaps/'), maxChars: 3000 })
+    extractPdfTextFromUrl(msg.url, {
+      cMapUrl: chrome.runtime.getURL('cmaps/'),
+      maxChars: 3000,
+      validateUrl: url => browserContext.assertUrlAllowed(url),
+    })
       .then(r =>
         sendResponse({
           ok: true,
