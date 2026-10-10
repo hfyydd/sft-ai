@@ -156,7 +156,7 @@ export class TaskRunStore {
 
     // A child run owns its evidence records so evidenceId lookups and final
     // verification remain run-scoped. Copy only bounded, provenance-bearing data.
-    const parentEvidence = (await this.getEvidence(parentRunId, 200)).slice().reverse();
+    const parentEvidence = (await this.getEvidence(parentRunId, 200)).sort((a, b) => b.capturedAt - a.capturedAt);
     const idMap = new Map<string, string>();
     let copiedBytes = 0;
     const MAX_INHERITED_EVIDENCE_BYTES = 4 * 1024 * 1024;
