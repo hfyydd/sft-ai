@@ -5,6 +5,7 @@ export interface ApprovalCardAction {
   runId: string;
   toolName: string;
   argsSummary: string;
+  previewSummary?: string;
   url?: string;
   nonce: string;
   parameterHash: string;
@@ -24,6 +25,12 @@ export function ApprovalCard({
       <div className="mb-2 font-semibold">{t('task_approval_needed')}</div>
       <div className="mb-1 text-xs">动作：{action.toolName}</div>
       <div className="mb-1 break-all text-xs">来源：{action.url || '当前页面'}</div>
+      {action.previewSummary && (
+        <div className="mb-3">
+          <div className="mb-1 text-xs font-semibold">操作内容预览（敏感字段已隐藏）</div>
+          <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-amber-200 bg-white/70 p-2 text-xs dark:border-amber-900 dark:bg-zinc-900">{action.previewSummary}</pre>
+        </div>
+      )}
       <pre className="mb-3 max-h-24 overflow-auto whitespace-pre-wrap text-xs">{action.argsSummary}</pre>
       <div className="flex gap-2">
         <button type="button" className="rounded bg-zinc-900 px-3 py-1.5 text-white" onClick={onApprove}>{t('task_approve_once')}</button>
