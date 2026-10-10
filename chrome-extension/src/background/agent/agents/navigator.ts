@@ -540,6 +540,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         let actionTargetUrl: string | undefined;
         let crossDomainLink = false;
         let crossDomainNavigation = false;
+        let isNativeSubmitControl = false;
+        let isDownloadLink = false;
         if (actionName === 'go_to_url' && normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs) {
           try {
             crossDomainNavigation =
@@ -552,6 +554,11 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           const targetNode = browserState.selectorMap.get(indexArg);
           if (targetNode) {
             riskText = targetNode.getAllTextTillNextClickableElement(3) + ' ' + JSON.stringify(targetNode.attributes || {});
+            const currentPage = await browserContext.getCurrentPage();
+            isNativeSubmitControl = await currentPage.isFormSubmitControl(targetNode).catch(() => false);
+            isDownloadLink = await currentPage.isDownloadLink(targetNode).catch(() => Boolean(targetNode.attributes?.download));
+            if (isNativeSubmitControl) riskText += ' native-form-submit';
+            if (isDownloadLink) riskText += ' file-download';
             const href = targetNode.attributes?.href;
             if (href) {
               try {
@@ -572,6 +579,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           ['close_tab', 'open_tab', 'search_google'].includes(actionName) ||
           crossDomainLink ||
           crossDomainNavigation ||
+          isNativeSubmitControl ||
+          isDownloadLink ||
           (actionName === 'send_keys' && /enter|return/i.test(keys));
         const targetUrl = normalizedRecord && typeof normalizedRecord.url === 'string'
           ? normalizedRecord.url
