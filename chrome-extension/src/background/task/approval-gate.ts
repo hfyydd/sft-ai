@@ -135,6 +135,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
     toolName: input.toolName,
     argsSummary: makeAuditSummary(input.args, input.toolName),
     previewSummary: input.previewSummary ? input.previewSummary.slice(0, 5000) : undefined,
+    reason: input.reason?.slice(0, 500),
     tabId: input.tabId,
     url: input.url,
     targetUrl: input.targetUrl,
