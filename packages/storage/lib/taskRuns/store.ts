@@ -299,16 +299,60 @@ export class TaskRunStore {
     db.close();
   }
 
-  private async trimEvidenceBytes(runId:string){
-    const db=await openTaskRunDatabase();
-    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');const idx=tx.objectStore('evidence').index('runId');const rows:Array<{key:IDBValidKey;bytes:number}>=[];let total=0;
-      const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){let excess=Math.max(0,total-MAX_EVIDENCE_BYTES_PER_RUN);for(const row of rows){if(excess<=0)break;tx.objectStore('evidence').delete(row.key);excess-=row.bytes;}return;}const value=cur.value as EvidenceRecord;const bytes=new TextEncoder().encode(value.content).byteLength+512;rows.push({key:cur.primaryKey as IDBValidKey,bytes});total+=bytes;cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+  private async trimEvidenceBytes(runId: string) {
+    const db = await openTaskRunDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('evidence', 'readwrite');
+      const idx = tx.objectStore('evidence').index('runId');
+      const rows: Array<{ key: IDBValidKey; bytes: number; capturedAt: number }> = [];
+      let total = 0;
+      const q = idx.openCursor(IDBKeyRange.only(runId));
+      q.onsuccess = () => {
+        const cur = q.result;
+        if (!cur) {
+          let excess = Math.max(0, total - MAX_EVIDENCE_BYTES_PER_RUN);
+          for (const row of rows.sort((a, b) => a.capturedAt - b.capturedAt)) {
+            if (excess <= 0) break;
+            tx.objectStore('evidence').delete(row.key);
+            excess -= row.bytes;
+          }
+          return;
+        }
+        const value = cur.value as EvidenceRecord;
+        const bytes = new TextEncoder().encode(value.content).byteLength + 512;
+        rows.push({ key: cur.primaryKey as IDBValidKey, bytes, capturedAt: value.capturedAt });
+        total += bytes;
+        cur.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
     db.close();
   }
 
-  private async trimEvidence(runId:string,maxItems:number){
-    const db=await openTaskRunDatabase();
-    await new Promise<void>((resolve,reject)=>{const tx=db.transaction('evidence','readwrite');const idx=tx.objectStore('evidence').index('runId');const values:IDBValidKey[]=[];const q=idx.openCursor(IDBKeyRange.only(runId));q.onsuccess=()=>{const cur=q.result;if(!cur){const excess=Math.max(0,values.length-maxItems);for(let i=0;i<excess;i++)tx.objectStore('evidence').delete(values[i]);return;}values.push(cur.primaryKey as IDBValidKey);cur.continue();};tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});
+  private async trimEvidence(runId: string, maxItems: number) {
+    const db = await openTaskRunDatabase();
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('evidence', 'readwrite');
+      const idx = tx.objectStore('evidence').index('runId');
+      const values: Array<{ key: IDBValidKey; capturedAt: number }> = [];
+      const q = idx.openCursor(IDBKeyRange.only(runId));
+      q.onsuccess = () => {
+        const cur = q.result;
+        if (!cur) {
+          const excess = Math.max(0, values.length - maxItems);
+          for (const row of values.sort((a, b) => a.capturedAt - b.capturedAt).slice(0, excess)) {
+            tx.objectStore('evidence').delete(row.key);
+          }
+          return;
+        }
+        const value = cur.value as EvidenceRecord;
+        values.push({ key: cur.primaryKey as IDBValidKey, capturedAt: value.capturedAt });
+        cur.continue();
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
     db.close();
   }
 
