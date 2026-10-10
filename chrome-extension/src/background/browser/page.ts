@@ -1171,6 +1171,32 @@ export default class Page {
     return element.evaluate(el => el instanceof HTMLSelectElement ? (el.selectedOptions[0]?.text?.trim() ?? null) : null);
   }
 
+  async getInputPreview(elementNode: DOMElementNode, proposedValue: string): Promise<string> {
+    if (!this._puppeteerPage) throw new Error('Puppeteer is not connected');
+    const element = await this.locateElement(elementNode);
+    if (!element) return '目标输入框已失效';
+    return element.evaluate((el, value) => {
+      const control = el as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
+      const type = (control.getAttribute('type') || control.tagName).toLowerCase();
+      const id = control.getAttribute('id') || '';
+      const externalLabel = id
+        ? Array.from(document.querySelectorAll('label')).find(label => label.htmlFor === id)?.innerText
+        : undefined;
+      const labelText = externalLabel || control.closest('label')?.textContent ||
+        control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
+        control.getAttribute('name') || control.getAttribute('id') || '输入框';
+      const label = String(labelText).replace(/\s+/g, ' ').trim().slice(0, 80) || '输入框';
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|card[_-]?number|security[_-]?code|验证码|密码|安全码)/i;
+      const sensitive = type === 'password' || secretPattern.test([
+        label, control.getAttribute('name') || '', control.getAttribute('autocomplete') || '', type,
+      ].join(' '));
+      let preview = value;
+      if (sensitive) preview = '[已隐藏，' + value.length + ' 个字符]';
+      else if (preview.length > 500) preview = preview.slice(0, 500) + '…';
+      return '字段：' + label + '\n拟填入：' + (preview || '（空字符串）') + '\n字段类型：' + type;
+    }, proposedValue);
+  }
+
   async getFormPreview(elementNode: DOMElementNode): Promise<string> {
     if (!this._puppeteerPage) throw new Error('Puppeteer is not connected');
     const element = await this.locateElement(elementNode);
