@@ -710,7 +710,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         if (error instanceof URLNotAllowedError) {
-          const deniedUrl = errorMessage.match(/URL:\\s*(\\S+)\\s+is not allowed/i)?.[1]
+          const deniedUrl = errorMessage.match(/URL:\s*(\S+)\s+is not allowed/i)?.[1]
             ?? (normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs
               ? String((normalizedActionArgs as { url: unknown }).url)
               : undefined);
