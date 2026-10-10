@@ -51,6 +51,8 @@ export interface PdfExtractOptions {
   startCharOffset?: number;
   /** 中文 PDF 的 CID 字体需要 CMap 映射表;扩展内传 chrome.runtime.getURL('cmaps/') */
   cMapUrl?: string;
+  /** Enforce the browser's URL policy both before fetch and after HTTP redirects. */
+  validateUrl?: (url: string) => void;
 }
 
 let pdfjsPromise: Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> | null = null;
@@ -225,10 +227,16 @@ async function readResponseBytesBounded(response: Response, maxBytes: number): P
  * - file:Service Worker 无法读 file://,由调用方先把字节读出来后传 extractPdfData
  */
 export async function extractPdfTextFromUrl(url: string, options?: PdfExtractOptions): Promise<PdfExtractResult> {
-  const res = await fetch(url, { credentials: 'include' });
+  const parsed = new URL(url);
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('在线 PDF 只允许从 http(s) 地址读取');
+  }
+  options?.validateUrl?.(url);
+  const res = await fetch(url, { credentials: 'include', redirect: 'follow' });
   if (!res.ok) {
     throw new Error(`下载 PDF 失败:HTTP ${res.status}`);
   }
+  if (res.url) options?.validateUrl?.(res.url);
   const contentLength = Number(res.headers.get('content-length') || 0);
   if (contentLength > MAX_PDF_BYTES) throw new Error(`PDF 文件超过 ${MAX_PDF_BYTES} 字节限制`);
   const data = await readResponseBytesBounded(res, MAX_PDF_BYTES);
