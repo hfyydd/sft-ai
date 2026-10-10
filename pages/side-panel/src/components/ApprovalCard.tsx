@@ -6,6 +6,7 @@ export interface ApprovalCardAction {
   toolName: string;
   argsSummary: string;
   previewSummary?: string;
+  reason?: string;
   url?: string;
   nonce: string;
   parameterHash: string;
@@ -24,6 +25,7 @@ export function ApprovalCard({
     <div className="shrink-0 border-t border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-800 dark:bg-amber-950">
       <div className="mb-2 font-semibold">{t('task_approval_needed')}</div>
       <div className="mb-1 text-xs">动作：{action.toolName}</div>
+      {action.reason && <div className="mb-2 text-xs">{action.reason}</div>}
       <div className="mb-1 break-all text-xs">来源：{action.url || '当前页面'}</div>
       {action.previewSummary && (
         <div className="mb-3">
