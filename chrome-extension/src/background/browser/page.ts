@@ -1186,7 +1186,7 @@ export default class Page {
         control.getAttribute('aria-label') || control.getAttribute('placeholder') ||
         control.getAttribute('name') || control.getAttribute('id') || '输入框';
       const label = String(labelText).replace(/\s+/g, ' ').trim().slice(0, 80) || '输入框';
-      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|card[_-]?number|security[_-]?code|验证码|密码|安全码)/i;
+      const secretPattern = /(password|passwd|secret|token|api[_-]?key|authorization|cookie|cvv|cvc|card[_-]?number|credit[_-]?card|bank[_-]?account|security[_-]?code|social[_-]?security|national[_-]?id|身份证|证件号码|银行卡号|信用卡号|银行账号|验证码|密码|安全码)/i;
       const sensitive = type === 'password' || secretPattern.test([
         label, control.getAttribute('name') || '', control.getAttribute('autocomplete') || '', type,
       ].join(' '));
