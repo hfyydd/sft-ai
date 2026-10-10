@@ -147,20 +147,47 @@ export class TaskRunStore {
       : await this.getRecentEvents(runId);
     return { run, checkpoint: await this.getCheckpoint(runId), events };
   }
-  async inheritContext(parentRunId:string, childRunId:string, activeTabId?:number) {
+  async inheritContext(parentRunId: string, childRunId: string, activeTabId?: number) {
     const parent = await this.getRun(parentRunId);
     const child = await this.getRun(childRunId);
     if (!parent || !child) throw new Error('Task context source or target does not exist');
     const parentCheckpoint = await this.getCheckpoint(parentRunId);
     if (!parentCheckpoint) return;
-    const inheritedMemory = parentCheckpoint.memory.map(fact => ({ ...fact, evidenceIds: [...fact.evidenceIds] }));
+
+    // A child run owns its evidence records so evidenceId lookups and final
+    // verification remain run-scoped. Copy only bounded, provenance-bearing data.
+    const parentEvidence = (await this.getEvidence(parentRunId, 200)).slice().reverse();
+    const idMap = new Map<string, string>();
+    let copiedBytes = 0;
+    const MAX_INHERITED_EVIDENCE_BYTES = 4 * 1024 * 1024;
+    for (const record of parentEvidence) {
+      const bytes = new TextEncoder().encode(record.content).byteLength;
+      if (copiedBytes + bytes > MAX_INHERITED_EVIDENCE_BYTES) continue;
+      const id = makeId();
+      await this.addEvidence({ ...record, id, runId: childRunId });
+      idMap.set(record.id, id);
+      copiedBytes += bytes;
+    }
+
+    const inheritedMemory = parentCheckpoint.memory.map(fact => ({
+      ...fact,
+      id: makeId(),
+      evidenceIds: fact.evidenceIds.map(evidenceId => idMap.get(evidenceId)).filter((value): value is string => Boolean(value)),
+    }));
+    const evidenceIds = [...idMap.values()];
+    const event = await this.appendEvent(childRunId, 'context.inherited', {
+      parentRunId,
+      memoryFacts: inheritedMemory.length,
+      evidenceRecords: evidenceIds.length,
+      copiedBytes,
+    });
     await this.saveCheckpoint({
       runId: childRunId,
-      sequence: 0,
+      sequence: event.sequence,
       plan: [],
       completedStepIds: [],
       memory: inheritedMemory,
-      evidenceIds: [...parentCheckpoint.evidenceIds],
+      evidenceIds,
       activeTabId: activeTabId ?? child.activeTabId,
     });
   }
