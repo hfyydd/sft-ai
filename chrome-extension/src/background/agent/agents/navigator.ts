@@ -537,6 +537,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
 
         const actionParameterHash = await hashActionArgs(normalizedActionArgs);
         let riskText = '';
+        let actionTargetUrl: string | undefined;
         let crossDomainLink = false;
         let crossDomainNavigation = false;
         if (actionName === 'go_to_url' && normalizedActionArgs && typeof normalizedActionArgs === 'object' && 'url' in normalizedActionArgs) {
@@ -554,7 +555,8 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
             const href = targetNode.attributes?.href;
             if (href) {
               try {
-                crossDomainLink = new URL(new URL(href, browserState.url).href).hostname !== new URL(browserState.url).hostname;
+                actionTargetUrl = new URL(href, browserState.url).href;
+                crossDomainLink = new URL(actionTargetUrl).hostname !== new URL(browserState.url).hostname;
               } catch {
                 crossDomainLink = false;
               }
@@ -573,7 +575,7 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
           (actionName === 'send_keys' && /enter|return/i.test(keys));
         const targetUrl = normalizedRecord && typeof normalizedRecord.url === 'string'
           ? normalizedRecord.url
-          : undefined;
+          : actionTargetUrl;
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
           parameterHash: actionParameterHash,
