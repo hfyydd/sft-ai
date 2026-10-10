@@ -29,8 +29,24 @@ function redactForAudit(value: unknown): unknown {
   return value;
 }
 
-function makeAuditSummary(value: unknown): string {
-  const redacted = redactForAudit(value);
+function makeAuditSummary(value: unknown, toolName: string): string {
+  let summaryValue = value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const object = value as Record<string, unknown>;
+    const safeObject = { ...object };
+    // Approved actions remain auditable without retaining the actual input data.
+    if (toolName === 'input_text' && typeof object.text === 'string') {
+      safeObject.text = '[已隐藏，' + object.text.length + ' 个字符；具体字段预览见下方]';
+    }
+    if (toolName === 'select_dropdown_option' && typeof object.text === 'string') {
+      safeObject.text = '[选项值已隐藏，' + object.text.length + ' 个字符]';
+    }
+    if (toolName === 'send_keys' && typeof object.keys === 'string') {
+      safeObject.keys = '[按键序列已隐藏，' + object.keys.length + ' 个字符]';
+    }
+    summaryValue = safeObject;
+  }
+  const redacted = redactForAudit(summaryValue);
   const serialized = JSON.stringify(redacted);
   return serialized.length > 2000 ? serialized.slice(0, 2000) + '…' : serialized;
 }
@@ -117,7 +133,7 @@ export async function requestApproval(input: ApprovalRequest): Promise<boolean> 
   const action: PendingAction = {
     runId: input.runId,
     toolName: input.toolName,
-    argsSummary: makeAuditSummary(input.args),
+    argsSummary: makeAuditSummary(input.args, input.toolName),
     previewSummary: input.previewSummary ? input.previewSummary.slice(0, 5000) : undefined,
     tabId: input.tabId,
     url: input.url,
