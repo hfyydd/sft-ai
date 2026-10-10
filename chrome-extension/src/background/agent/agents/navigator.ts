@@ -30,6 +30,7 @@ import { HistoryTreeProcessor } from '@src/background/browser/dom/history/servic
 import { AgentStepRecord } from '../history';
 import { type DOMHistoryElement } from '@src/background/browser/dom/history/view';
 import { taskRunStore } from '@extension/storage';
+import { classifyActionRisk, requiresApproval as policyRequiresApproval } from '../../task/approval-policy';
 
 const PENDING_WRITE_TOOLS = new Set(['click_element','input_text','select_dropdown_option','send_keys','fill_form','close_tab','open_tab','go_to_url','go_back']);
 
@@ -535,9 +536,36 @@ export class NavigatorAgent extends BaseAgent<z.ZodType, NavigatorResult> {
         }
 
         const actionParameterHash = await hashActionArgs(normalizedActionArgs);
+        let riskText = '';
+        let crossDomainLink = false;
+        if (actionName === 'click_element' && indexArg !== null) {
+          const targetNode = browserState.selectorMap.get(indexArg);
+          if (targetNode) {
+            riskText = targetNode.getAllTextTillNextClickableElement(3) + ' ' + JSON.stringify(targetNode.attributes || {});
+            const href = targetNode.attributes?.href;
+            if (href) {
+              try {
+                crossDomainLink = new URL(new URL(href, browserState.url).href).hostname !== new URL(browserState.url).hostname;
+              } catch {
+                crossDomainLink = false;
+              }
+            }
+          }
+        }
+        const normalizedRecord = normalizedActionArgs && typeof normalizedActionArgs === 'object'
+          ? normalizedActionArgs as Record<string, unknown>
+          : {};
+        const keys = typeof normalizedRecord.keys === 'string' ? normalizedRecord.keys : '';
+        const requiresConfirmation =
+          policyRequiresApproval(actionName, normalizedActionArgs, riskText) ||
+          ['close_tab', 'open_tab', 'search_google'].includes(actionName) ||
+          crossDomainLink ||
+          (actionName === 'send_keys' && /enter|return/i.test(keys));
         await taskRunStore.appendEvent(this.context.taskId, 'tool.requested', {
           toolName: actionName,
           parameterHash: actionParameterHash,
+          risk: classifyActionRisk(actionName, normalizedActionArgs, riskText),
+          requiresApproval: requiresConfirmation,
           step: this.context.nSteps,
         }).catch(() => undefined);
 
