@@ -526,8 +526,17 @@ export class ActionBuilder {
             crossDomainLink = false;
           }
         }
-        if (needsApproval('click_element', intent, input, elementRiskText) || crossDomainLink) {
+        const isSubmitControl = await page.isFormSubmitControl(elementNode).catch(() => false);
+        const isDownloadLink = await page.isDownloadLink(elementNode).catch(() => Boolean(elementNode.attributes?.download));
+        if (needsApproval('click_element', intent, input, elementRiskText) || crossDomainLink || isSubmitControl || isDownloadLink) {
           const previewSummary = await page.getFormPreview(elementNode).catch(() => '');
+          const reason = isSubmitControl
+            ? '点击会提交关联表单'
+            : isDownloadLink
+              ? '点击会触发文件下载'
+              : crossDomainLink
+                ? '点击将跳转到其他域名：' + linkedUrl
+                : (intent || elementText);
           const approved = await requestApproval({
             runId: this.context.taskId,
             toolName: 'click_element',
@@ -535,7 +544,7 @@ export class ActionBuilder {
             tabId: page.tabId,
             url: page.url(),
             targetUrl: linkedUrl || undefined,
-            reason: crossDomainLink ? '点击将跳转到其他域名：' + linkedUrl : (intent || elementText),
+            reason,
             previewSummary: previewSummary || undefined,
           });
           if (!approved) return new ActionResult({ error: 'User approval was not granted', includeInMemory: true });
