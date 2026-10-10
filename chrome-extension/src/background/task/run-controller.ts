@@ -42,6 +42,10 @@ export class RunController {
       if (!checkpoint) {
         if (run.status === 'running' || run.status === 'queued' || run.status === 'waiting_approval' || run.status === 'waiting_user') {
           await taskRunStore.updateStatus(run.id, 'interrupted');
+          await taskRunStore.appendEvent(run.id, 'runtime.recovery_loss', {
+            reason: 'service_worker_restart_without_checkpoint',
+            previousStatus: run.status,
+          });
           await taskRunStore.appendEvent(run.id, 'runtime.interrupted', {
             reason: 'service_worker_restart_without_checkpoint',
           });
